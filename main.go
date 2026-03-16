@@ -41,7 +41,8 @@ func main() {
 	http.HandleFunc("/api/host/close", hostOnly(closeRoundHandler))
 	http.HandleFunc("/api/host/reset", hostOnly(resetHandler))
 	http.HandleFunc("/api/host/reveal", hostOnly(revealHandler))
-	http.HandleFunc("/api/export.csv", hostOnly(exportCSVHandler))
+	http.HandleFunc("/api/host/screen-qr", hostOnly(setScreenQRHandler))
+	http.HandleFunc("/api/host/team/remove", hostOnly(removeTeamHandler))
 
 	http.HandleFunc("/manifest.webmanifest", manifestHandler)
 	http.HandleFunc("/sw.js", serviceWorkerHandler)

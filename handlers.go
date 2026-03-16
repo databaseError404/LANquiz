@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -160,11 +157,13 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 
 	t.LastSeen = time.Now()
 	t.Online = true
+	now := time.Now()
+
 	game.Answers[req.TeamID] = &Answer{
 		TeamID:   t.ID,
 		TeamName: t.Name,
 		Choice:   req.Choice,
-		SentAt:   time.Now(),
+		SentAt:   now,
 	}
 
 	broadcastLocked()
@@ -173,9 +172,10 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 
 func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		DurationSec int  `json:"durationSec"`
-		AllowChange bool `json:"allowChange"`
-		HideAnswers bool `json:"hideAnswers"`
+		DurationSec  int  `json:"durationSec"`
+		AllowChange  bool `json:"allowChange"`
+		HideAnswers  bool `json:"hideAnswers"`
+		ShowScreenQR bool `json:"showScreenQR"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
@@ -188,6 +188,7 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	game.Round.OpenedAt = &now
 	game.Round.AllowChange = req.AllowChange
 	game.Round.HideAnswers = req.HideAnswers
+	game.Round.ShowScreenQR = req.ShowScreenQR
 	game.Round.Correct = ""
 	game.Round.Revealed = false
 
@@ -197,6 +198,63 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		game.Round.ClosesAt = nil
 	}
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func setScreenQRHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Show bool `json:"show"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	game.Round.ShowScreenQR = req.Show
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func removeTeamHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		TeamID string `json:"teamId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	if req.TeamID == "" {
+		http.Error(w, "empty team id", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, ok := game.Teams[req.TeamID]; !ok {
+		http.Error(w, "unknown team", 404)
+		return
+	}
+
+	delete(game.Teams, req.TeamID)
+	delete(game.Answers, req.TeamID)
 
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
@@ -267,32 +325,6 @@ func resetHandler(w http.ResponseWriter, r *http.Request) {
 
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
-}
-
-func exportCSVHandler(w http.ResponseWriter, r *http.Request) {
-	mu.RLock()
-	defer mu.RUnlock()
-
-	var buf bytes.Buffer
-	cw := csv.NewWriter(&buf)
-	_ = cw.Write([]string{"round", "team_id", "team_name", "choice", "sent_at", "correct", "is_right"})
-
-	for _, row := range game.History {
-		_ = cw.Write([]string{
-			strconv.Itoa(row.Round),
-			row.TeamID,
-			row.TeamName,
-			row.Choice,
-			row.SentAt.Format(time.RFC3339),
-			row.Correct,
-			strconv.FormatBool(row.IsRight),
-		})
-	}
-	cw.Flush()
-
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=quiz_results.csv")
-	_, _ = w.Write(buf.Bytes())
 }
 
 func eventsHandler(w http.ResponseWriter, r *http.Request) {

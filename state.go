@@ -26,14 +26,15 @@ type Answer struct {
 }
 
 type RoundState struct {
-	Number      int        `json:"number"`
-	Open        bool       `json:"open"`
-	OpenedAt    *time.Time `json:"openedAt,omitempty"`
-	ClosesAt    *time.Time `json:"closesAt,omitempty"`
-	AllowChange bool       `json:"allowChange"`
-	HideAnswers bool       `json:"hideAnswers"`
-	Correct     string     `json:"correct,omitempty"`
-	Revealed    bool       `json:"revealed"`
+	Number       int        `json:"number"`
+	Open         bool       `json:"open"`
+	OpenedAt     *time.Time `json:"openedAt,omitempty"`
+	ClosesAt     *time.Time `json:"closesAt,omitempty"`
+	AllowChange  bool       `json:"allowChange"`
+	HideAnswers  bool       `json:"hideAnswers"`
+	ShowScreenQR bool       `json:"showScreenQR"`
+	Correct      string     `json:"correct,omitempty"`
+	Revealed     bool       `json:"revealed"`
 }
 
 type HistoryRow struct {
@@ -101,10 +102,11 @@ func initGame(title, secret, dataPath string) {
 		Answers:  map[string]*Answer{},
 		Events:   map[chan []byte]bool{},
 		Round: RoundState{
-			Number:      1,
-			Open:        false,
-			AllowChange: true,
-			HideAnswers: true,
+			Number:       1,
+			Open:         false,
+			AllowChange:  true,
+			HideAnswers:  true,
+			ShowScreenQR: false,
 		},
 	}
 }
@@ -132,7 +134,10 @@ func publicStateLocked(isHost bool) PublicState {
 		if a, ok := game.Answers[t.ID]; ok {
 			pt.Answered = true
 			answeredCount++
-			pt.AnsweredAt = a.SentAt.Format("15:04:05")
+			if game.Round.OpenedAt != nil {
+				elapsed := int(a.SentAt.Sub(*game.Round.OpenedAt) / time.Second)
+				pt.AnsweredAt = formatMMSS(elapsed)
+			}
 			if isHost || !game.Round.HideAnswers || !game.Round.Open {
 				pt.Choice = a.Choice
 			}
@@ -156,6 +161,13 @@ func publicStateLocked(isHost bool) PublicState {
 		AnsweredCount:  answeredCount,
 		IPHints:        localIPs(),
 	}
+}
+
+func formatMMSS(totalSec int) string {
+	if totalSec < 0 {
+		totalSec = 0
+	}
+	return time.Unix(int64(totalSec), 0).UTC().Format("04:05")
 }
 
 func broadcastLocked() {

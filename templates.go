@@ -469,6 +469,17 @@ th,td{
 .qrBox{
   margin-top:16px;
 }
+.detailsBlock{
+  margin-top:12px;
+}
+.detailsBlock summary{
+  cursor:pointer;
+  font-weight:700;
+  color:#d6e3ff;
+}
+.detailsBlock[open] summary{
+  margin-bottom:10px;
+}
 .qrWrap{
   background:#fff;
   padding:12px;
@@ -477,8 +488,8 @@ th,td{
 }
 .qrWrap img{
   display:block;
-  width:220px;
-  height:220px;
+  width:160px;
+  height:160px;
 }
 .small{
   font-size:12px;
@@ -488,14 +499,59 @@ th,td{
   word-break:break-all;
 }
 .revealBtn{
-  min-width:56px;
-  font-weight:700;
-  background:#1a2446;
+  min-width:64px;
+  font-weight:800;
+  background:#1f2d57;
   color:#fff;
+  border:2px solid #4a5f9b;
 }
 .revealBtn.selected{
-  outline:3px solid #4fd18b;
-  background:#16322b;
+  outline:3px solid #88ffd0;
+  background:#14503e;
+  border-color:#88ffd0;
+}
+.controlGroup{
+  margin-top:14px;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid #2f4270;
+}
+.controlGroup h3{
+  margin:0 0 10px;
+  font-size:14px;
+  letter-spacing:.02em;
+  color:#d6e3ff;
+}
+.roundGroup{
+  background:#0d1b38;
+}
+.answerGroup{
+  background:#2b1a3f;
+  border-color:#6c4c99;
+}
+.roundBtn{
+  font-weight:800;
+  color:#fff;
+}
+.roundMainRow{
+  flex-wrap:nowrap;
+}
+.roundMainRow .roundBtn{
+  flex:1;
+  min-width:0;
+  white-space:nowrap;
+}
+.roundBtn.open{
+  background:#0c8a4a;
+}
+.roundBtn.close{
+  background:#c3561f;
+}
+.roundBtn.next{
+  background:#3f5ee6;
+}
+.roundBtn.reset{
+  background:#a12b47;
 }
 </style>
 </head>
@@ -505,23 +561,34 @@ th,td{
 
   <div class="grid">
     <div class="card">
-      <div>IP в локальной сети: <span id="lanIps" class="linkText">—</span></div>
-      <div style="margin-top:8px">
-        IP для QR:
-        <select id="lanIpSelect" onchange="saveLanIPChoice()" style="margin-left:8px"></select>
-      </div>
-      <div>Игроки: <span id="playerLink" class="linkText">—</span></div>
-      <div>Ведущий: <span id="hostLink" class="linkText">—</span></div>
-      <div>Проектор: <span id="screenLink" class="linkText">—</span></div>
+      <details class="detailsBlock">
+        <summary>Сетевые ссылки и QR</summary>
+        <div>IP в локальной сети: <span id="lanIps" class="linkText">—</span></div>
+        <div style="margin-top:8px">
+          IP для QR:
+          <select id="lanIpSelect" onchange="saveLanIPChoice()" style="margin-left:8px"></select>
+        </div>
+        <div>Игроки: <span id="playerLink" class="linkText">—</span></div>
+        <div>Ведущий: <span id="hostLink" class="linkText">—</span></div>
+        <div>Проектор: <span id="screenLink" class="linkText">—</span></div>
 
-      <div class="qrBox">
-        <div style="margin-bottom:8px">QR для игроков</div>
-        <div class="qrWrap">
-          <img id="qrImg" alt="QR code">
+        <div class="qrBox">
+          <div style="margin-bottom:8px">QR для игроков</div>
+          <div class="qrWrap">
+            <img id="qrImg" alt="QR code">
+          </div>
+          <div class="small" style="margin-top:8px">
+            Игроки могут открыть страницу, отсканировав QR-код.
+          </div>
         </div>
-        <div class="small" style="margin-top:8px">
-          Игроки могут открыть страницу, отсканировав QR-код.
+
+        <div class="row" style="margin-top:12px">
+          <button class="roundBtn reset" onclick="fullReset()">Полный сброс</button>
         </div>
+      </details>
+
+      <div class="row checkRow" style="margin-top:10px">
+        <label><input id="showScreenQR" type="checkbox" onchange="setScreenQRVisible()"> Показывать QR на экране /screen</label>
       </div>
 
       <div id="secretBox" class="hidden" style="margin-top:12px">
@@ -540,27 +607,27 @@ th,td{
       <div class="row checkRow">
         <label><input id="hideAnswers" type="checkbox" checked> Скрывать ответы до конца</label>
       </div>
-
-      <div class="row" style="margin-top:12px">
-        <button onclick="openRound()">Открыть</button>
-        <button onclick="closeRound()">Закрыть</button>
-      </div>
-      <div class="row">
-        <button onclick="nextRound()">Следующий раунд</button>
-        <button onclick="fullReset()">Полный сброс</button>
-      </div>
-
-      <div style="margin-top:14px">Правильный ответ</div>
-      <div class="row">
-        <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
-        <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
-        <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
-        <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
+      <div class="controlGroup roundGroup">
+        <h3>Управление раундом</h3>
+        <div class="row roundMainRow">
+          <button class="roundBtn open" onclick="openRound()">Начать</button>
+          <button class="roundBtn close" onclick="closeRound()">Завершить</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
+        </div>
       </div>
 
-      <div class="row" style="margin-top:12px">
-        <button onclick="downloadCSV()">Скачать CSV</button>
+      <div class="controlGroup answerGroup">
+        <h3>Правильный ответ</h3>
+        <div class="row">
+          <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
+          <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
+          <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
+          <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
+        </div>
       </div>
+
     </div>
 
     <div class="card">
@@ -576,7 +643,7 @@ th,td{
 
       <table style="margin-top:14px">
         <thead>
-          <tr><th>Команда</th><th>Онлайн</th><th>Ответ</th><th>Время</th></tr>
+          <tr><th>Команда</th><th>Онлайн</th><th>Ответ</th><th>Время</th><th>Действие</th></tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -758,6 +825,7 @@ function render(){
   $('correctBox').textContent=state.round.revealed && state.round.correct ? 'Правильный ответ: '+state.round.correct : '';
   $('allowChange').checked=!!state.round.allowChange;
   $('hideAnswers').checked=!!state.round.hideAnswers;
+  $('showScreenQR').checked=!!state.round.showScreenQR;
 
   const base=shareBaseURL();
   syncLanIPSelect();
@@ -784,7 +852,19 @@ function render(){
       '<td>'+escapeHtml(t.name)+'</td>'+
       '<td>'+(t.online?'да':'нет')+'</td>'+
       '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>'+
-      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>';
+      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>'+
+      '<td></td>';
+
+    const actionCell=tr.lastElementChild;
+    const removeBtn=document.createElement('button');
+    removeBtn.textContent='Удалить';
+    removeBtn.style.background='#5a1f2d';
+    removeBtn.style.color='#fff';
+    removeBtn.style.padding='8px 10px';
+    removeBtn.style.fontSize='14px';
+    removeBtn.onclick=()=>removeTeam(t.id, t.name);
+    actionCell.appendChild(removeBtn);
+
     tbody.appendChild(tr);
   }
 }
@@ -803,7 +883,18 @@ async function openRound(){
     await api('/api/host/open','POST',{
       durationSec:parseInt($('duration').value||'0',10)||0,
       allowChange:$('allowChange').checked,
-      hideAnswers:$('hideAnswers').checked
+      hideAnswers:$('hideAnswers').checked,
+      showScreenQR:$('showScreenQR').checked
+    });
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function setScreenQRVisible(){
+  try{
+    await api('/api/host/screen-qr','POST',{
+      show:$('showScreenQR').checked
     });
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
@@ -843,9 +934,14 @@ async function reveal(c){
   }
 }
 
-function downloadCSV(){
-  const qs=hostSecret?('?secret='+encodeURIComponent(hostSecret)):'';
-  location='/api/export.csv'+qs;
+async function removeTeam(teamId, teamName){
+  if(!teamId) return;
+  if(!confirm('Удалить команду "'+teamName+'" из списка?')) return;
+  try{
+    await api('/api/host/team/remove','POST',{teamId});
+  }catch(e){
+    alert('Ошибка удаления команды: ' + (e.message || e));
+  }
 }
 
 setInterval(()=>{
@@ -919,6 +1015,24 @@ h1{
 .small{
   color:#aab7dd;
 }
+.hidden{
+  display:none;
+}
+.qrBlock{
+  margin-top:18px;
+  text-align:center;
+}
+.qrWrap{
+  display:inline-block;
+  background:#fff;
+  border-radius:12px;
+  padding:10px;
+}
+.qrWrap img{
+  display:block;
+  width:220px;
+  height:220px;
+}
 @media (max-width:1000px){
   .grid{grid-template-columns:repeat(2,1fr)}
 }
@@ -934,10 +1048,37 @@ h1{
 </div>
 <div id="status" class="small" style="font-size:24px;margin-bottom:18px">—</div>
 <div id="teams" class="grid"></div>
+<div class="qrBlock">
+  <div class="small" style="font-size:20px;margin-bottom:8px">Подключение игроков</div>
+  <div class="qrWrap">
+    <img id="playerQr" alt="QR для страницы игроков">
+  </div>
+  <div id="playerUrl" class="small" style="font-size:16px;margin-top:8px">—</div>
+</div>
 
 <script>
 let state=null;
 let es=new EventSource('/events');
+
+function isLoopbackHost(){
+  const h=window.location.hostname;
+  return h==='localhost' || h==='127.0.0.1' || h==='::1';
+}
+
+function playerURLForShare(){
+  const origin=window.location.origin;
+  if(!state || !Array.isArray(state.ipHints)) return origin + '/';
+
+  if(!isLoopbackHost()) return origin + '/';
+
+  if(state.ipHints.length>0){
+    const proto=window.location.protocol;
+    const port=window.location.port ? (':'+window.location.port) : '';
+    return proto+'//'+state.ipHints[0]+port+'/';
+  }
+
+  return origin + '/';
+}
 
 es.onmessage=e=>{
   const data=JSON.parse(e.data);
@@ -972,6 +1113,11 @@ function render(){
 
   const root=document.getElementById('teams');
   root.innerHTML='';
+
+  const playerURL=playerURLForShare();
+  document.getElementById('playerQr').src='/qr.png?text='+encodeURIComponent(playerURL);
+  document.getElementById('playerUrl').textContent=playerURL;
+  document.querySelector('.qrBlock').classList.toggle('hidden', !state.round.showScreenQR);
 
   for(const t of state.teams){
     const div=document.createElement('div');
