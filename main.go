@@ -39,6 +39,7 @@ func main() {
 
 	http.HandleFunc("/api/host/open", hostOnly(openRoundHandler))
 	http.HandleFunc("/api/host/close", hostOnly(closeRoundHandler))
+	http.HandleFunc("/api/host/accept-late", hostOnly(acceptLateAnswersHandler))
 	http.HandleFunc("/api/host/reset", hostOnly(resetHandler))
 	http.HandleFunc("/api/host/reveal", hostOnly(revealHandler))
 	http.HandleFunc("/api/host/screen-qr", hostOnly(setScreenQRHandler))

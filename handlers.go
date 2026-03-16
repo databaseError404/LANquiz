@@ -146,13 +146,19 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown team", 404)
 		return
 	}
-	if !game.Round.Open {
+	if !game.Round.Open && !game.Round.AcceptLate {
 		http.Error(w, "round closed", 409)
 		return
 	}
-	if _, exists := game.Answers[req.TeamID]; exists && !game.Round.AllowChange {
-		http.Error(w, "answer already submitted", 409)
-		return
+	if _, exists := game.Answers[req.TeamID]; exists {
+		if game.Round.AcceptLate {
+			http.Error(w, "late mode accepts only unanswered teams", 409)
+			return
+		}
+		if !game.Round.AllowChange {
+			http.Error(w, "answer already submitted", 409)
+			return
+		}
 	}
 
 	t.LastSeen = time.Now()
@@ -164,6 +170,13 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 		TeamName: t.Name,
 		Choice:   req.Choice,
 		SentAt:   now,
+	}
+
+	if !game.Round.Open {
+		rebuildRoundHistoryLocked()
+	}
+	if game.Round.AcceptLate && len(game.Answers) >= len(game.Teams) {
+		game.Round.AcceptLate = false
 	}
 
 	broadcastLocked()
@@ -185,6 +198,7 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	game.Answers = map[string]*Answer{}
 	game.Round.Open = true
+	game.Round.AcceptLate = false
 	game.Round.OpenedAt = &now
 	game.Round.AllowChange = req.AllowChange
 	game.Round.HideAnswers = req.HideAnswers
@@ -198,6 +212,23 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		game.Round.ClosesAt = nil
 	}
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func acceptLateAnswersHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	game.Round.Open = false
+	game.Round.ClosesAt = nil
+	game.Round.AcceptLate = true
 
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
@@ -310,6 +341,7 @@ func resetHandler(w http.ResponseWriter, r *http.Request) {
 
 	game.Answers = map[string]*Answer{}
 	game.Round.Open = false
+	game.Round.AcceptLate = false
 	game.Round.OpenedAt = nil
 	game.Round.ClosesAt = nil
 	game.Round.Correct = ""

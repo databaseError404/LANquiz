@@ -302,7 +302,13 @@ function render(){
   const myAns=(me && me.choice) || '—';
   $('myAnswerLabel').textContent=myAns;
 
-  if(!state.round.open){
+  if(state.round.acceptLate){
+    if(me && me.answered){
+      setStatus('Идёт приём оставшихся ответов. Ваш ответ уже сохранён.', 'ok');
+    }else{
+      setStatus('Идёт приём оставшихся ответов. Можно ответить без таймера.', 'warn');
+    }
+  }else if(!state.round.open){
     if(state.round.revealed && state.round.correct){
       setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct, 'ok');
     }else{
@@ -321,7 +327,9 @@ function render(){
   }
 
   document.querySelectorAll('.answer').forEach(btn=>{
-    const can = state.round.open && (!me || !me.answered || state.round.allowChange);
+    const canRoundOpen = state.round.open && (!me || !me.answered || state.round.allowChange);
+    const canLate = state.round.acceptLate && (!me || !me.answered);
+    const can = canRoundOpen || canLate;
     btn.disabled=!can;
     btn.classList.toggle('active', myAns===btn.dataset.choice);
   });
@@ -614,6 +622,9 @@ th,td{
           <button class="roundBtn close" onclick="closeRound()">Завершить</button>
         </div>
         <div class="row" style="margin-top:10px">
+          <button class="roundBtn close" onclick="acceptLateAnswers()">Принять оставшиеся ответы</button>
+        </div>
+        <div class="row" style="margin-top:10px">
           <button class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
         </div>
       </div>
@@ -821,8 +832,16 @@ function render(){
   $('roundNo').textContent=state.round.number;
   $('onlineCount').textContent=state.onlineCount;
   $('answeredCount').textContent=state.answeredCount;
-  $('roundStatus').textContent=state.round.open ? 'Раунд открыт' : 'Раунд закрыт';
-  $('correctBox').textContent=state.round.revealed && state.round.correct ? 'Правильный ответ: '+state.round.correct : '';
+  const totalTeams=Array.isArray(state.teams) ? state.teams.length : 0;
+  const allAnswered=totalTeams===0 || state.answeredCount>=totalTeams;
+  if(state.round.acceptLate){
+    $('roundStatus').textContent='Приём оставшихся ответов (без таймера)';
+  }else{
+    $('roundStatus').textContent=state.round.open ? 'Раунд открыт' : 'Раунд закрыт';
+  }
+  $('correctBox').textContent=(allAnswered && state.round.revealed && state.round.correct)
+    ? 'Правильный ответ: '+state.round.correct
+    : '';
   $('allowChange').checked=!!state.round.allowChange;
   $('hideAnswers').checked=!!state.round.hideAnswers;
   $('showScreenQR').checked=!!state.round.showScreenQR;
@@ -904,6 +923,14 @@ async function setScreenQRVisible(){
 async function closeRound(){
   try{
     await api('/api/host/close','POST',{});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function acceptLateAnswers(){
+  try{
+    await api('/api/host/accept-late','POST',{});
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
   }
@@ -1099,6 +1126,9 @@ function escapeHtml(s){
 function render(){
   if(!state) return;
 
+  const totalTeams=Array.isArray(state.teams) ? state.teams.length : 0;
+  const allAnswered=totalTeams===0 || state.answeredCount>=totalTeams;
+
   document.getElementById('title').textContent=state.title;
   document.getElementById('roundNo').textContent=state.round.number;
   document.getElementById('onlineCount').textContent=state.onlineCount;
@@ -1107,9 +1137,11 @@ function render(){
   document.getElementById('status').textContent =
     state.round.open
       ? 'Раунд открыт'
-      : (state.round.revealed && state.round.correct
+      : (state.round.acceptLate
+          ? 'Принимаются оставшиеся ответы'
+          : (allAnswered && state.round.revealed && state.round.correct
           ? 'Раунд закрыт. Правильный ответ: ' + state.round.correct
-          : 'Раунд закрыт');
+          : 'Раунд закрыт'));
 
   const root=document.getElementById('teams');
   root.innerHTML='';
@@ -1122,7 +1154,7 @@ function render(){
   for(const t of state.teams){
     const div=document.createElement('div');
     div.className='card';
-    const hideOnScreen = state.round.open && state.round && state.round.hideAnswers === true;
+    const hideOnScreen = !allAnswered || (state.round.open && state.round && state.round.hideAnswers === true);
     const shownChoice = hideOnScreen ? '' : (t.choice || '');
     div.innerHTML =
       '<div class="name">'+escapeHtml(t.name)+'</div>' +

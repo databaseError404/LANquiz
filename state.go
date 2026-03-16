@@ -28,6 +28,7 @@ type Answer struct {
 type RoundState struct {
 	Number       int        `json:"number"`
 	Open         bool       `json:"open"`
+	AcceptLate   bool       `json:"acceptLate"`
 	OpenedAt     *time.Time `json:"openedAt,omitempty"`
 	ClosesAt     *time.Time `json:"closesAt,omitempty"`
 	AllowChange  bool       `json:"allowChange"`
@@ -138,7 +139,7 @@ func publicStateLocked(isHost bool) PublicState {
 				elapsed := int(a.SentAt.Sub(*game.Round.OpenedAt) / time.Second)
 				pt.AnsweredAt = formatMMSS(elapsed)
 			}
-			if isHost || !game.Round.HideAnswers || !game.Round.Open {
+			if isHost || !game.Round.HideAnswers || (!game.Round.Open && !game.Round.AcceptLate) {
 				pt.Choice = a.Choice
 			}
 		}
@@ -187,10 +188,22 @@ func closeRoundLocked() {
 	}
 
 	game.Round.Open = false
+	game.Round.AcceptLate = false
 	game.Round.ClosesAt = nil
+	rebuildRoundHistoryLocked()
+	broadcastLocked()
+}
+
+func rebuildRoundHistoryLocked() {
+	filtered := make([]HistoryRow, 0, len(game.History))
+	for _, h := range game.History {
+		if h.Round != game.Round.Number {
+			filtered = append(filtered, h)
+		}
+	}
 
 	for _, a := range game.Answers {
-		game.History = append(game.History, HistoryRow{
+		filtered = append(filtered, HistoryRow{
 			Round:    game.Round.Number,
 			TeamID:   a.TeamID,
 			TeamName: a.TeamName,
@@ -200,8 +213,7 @@ func closeRoundLocked() {
 			IsRight:  game.Round.Correct != "" && a.Choice == game.Round.Correct,
 		})
 	}
-
-	broadcastLocked()
+	game.History = filtered
 }
 
 func randomID() string {
