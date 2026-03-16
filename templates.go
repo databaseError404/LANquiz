@@ -541,6 +541,12 @@ th,td{
   font-weight:800;
   color:#fff;
 }
+.roundBtn:disabled{
+  background:#6b7280 !important;
+  color:#e5e7eb;
+  cursor:not-allowed;
+  opacity:.95;
+}
 .roundMainRow{
   flex-wrap:nowrap;
 }
@@ -560,6 +566,11 @@ th,td{
 }
 .roundBtn.reset{
   background:#a12b47;
+}
+.roundBtn.prev{
+  background:#4b5563;
+  font-size:13px;
+  padding:8px 10px;
 }
 </style>
 </head>
@@ -604,8 +615,6 @@ th,td{
         <button onclick="saveSecret()" style="margin-top:8px">OK</button>
       </div>
 
-      <div id="hostStatus" class="status">Подключение...</div>
-
       <div style="margin-top:14px">Длительность (сек)</div>
       <input id="duration" type="number" value="30">
 
@@ -622,10 +631,13 @@ th,td{
           <button class="roundBtn close" onclick="closeRound()">Завершить</button>
         </div>
         <div class="row" style="margin-top:10px">
-          <button class="roundBtn close" onclick="acceptLateAnswers()">Принять оставшиеся ответы</button>
+          <button id="acceptLateBtn" class="roundBtn close" onclick="acceptLateAnswers()" disabled>Принять оставшиеся ответы</button>
         </div>
         <div class="row" style="margin-top:10px">
           <button class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="roundBtn prev" onclick="prevRound()">Предыдущий раунд</button>
         </div>
       </div>
 
@@ -638,6 +650,8 @@ th,td{
           <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
         </div>
       </div>
+
+      <div id="hostStatus" class="status" style="margin-top:16px">Подключение...</div>
 
     </div>
 
@@ -660,6 +674,7 @@ th,td{
       </table>
     </div>
   </div>
+
 </div>
 
 <script>
@@ -761,10 +776,18 @@ function connect(){
   };
 }
 
-function saveLanIPChoice(){
+async function saveLanIPChoice(){
   selectedLanIP=$('lanIpSelect').value;
   localStorage.setItem('quiz_lan_ip', selectedLanIP);
   render();
+  try{
+    await api('/api/host/screen-qr','POST',{
+      show:$('showScreenQR').checked,
+      lanIP:selectedOrAutoLanIP()
+    });
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
 }
 
 function syncLanIPSelect(){
@@ -834,6 +857,8 @@ function render(){
   $('answeredCount').textContent=state.answeredCount;
   const totalTeams=Array.isArray(state.teams) ? state.teams.length : 0;
   const allAnswered=totalTeams===0 || state.answeredCount>=totalTeams;
+  const canAcceptLate = !state.round.open && !state.round.acceptLate && totalTeams>0 && !allAnswered;
+  $('acceptLateBtn').disabled = !canAcceptLate;
   if(state.round.acceptLate){
     $('roundStatus').textContent='Приём оставшихся ответов (без таймера)';
   }else{
@@ -913,7 +938,8 @@ async function openRound(){
 async function setScreenQRVisible(){
   try{
     await api('/api/host/screen-qr','POST',{
-      show:$('showScreenQR').checked
+	  show:$('showScreenQR').checked,
+	  lanIP:selectedOrAutoLanIP()
     });
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
@@ -939,6 +965,14 @@ async function acceptLateAnswers(){
 async function nextRound(){
   try{
     await api('/api/host/reset','POST',{full:false});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function prevRound(){
+  try{
+    await api('/api/host/prev-round','POST',{});
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
   }
@@ -1097,6 +1131,12 @@ function playerURLForShare(){
   if(!state || !Array.isArray(state.ipHints)) return origin + '/';
 
   if(!isLoopbackHost()) return origin + '/';
+
+  if(state.round && state.round.lanIP && state.ipHints.includes(state.round.lanIP)){
+    const proto=window.location.protocol;
+    const port=window.location.port ? (':'+window.location.port) : '';
+    return proto+'//'+state.round.lanIP+port+'/';
+  }
 
   if(state.ipHints.length>0){
     const proto=window.location.protocol;

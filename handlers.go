@@ -150,13 +150,25 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "round closed", 409)
 		return
 	}
-	if _, exists := game.Answers[req.TeamID]; exists {
+	if existing, exists := game.Answers[req.TeamID]; exists {
 		if game.Round.AcceptLate {
 			http.Error(w, "late mode accepts only unanswered teams", 409)
 			return
 		}
 		if !game.Round.AllowChange {
 			http.Error(w, "answer already submitted", 409)
+			return
+		}
+
+		// Повторный выбор уже выбранного варианта снимает ответ
+		// и возвращает команду в состояние "нет ответа".
+		if existing.Choice == req.Choice {
+			delete(game.Answers, req.TeamID)
+			if !game.Round.Open {
+				rebuildRoundHistoryLocked()
+			}
+			broadcastLocked()
+			writeJSON(w, map[string]any{"ok": true})
 			return
 		}
 	}
@@ -226,6 +238,17 @@ func acceptLateAnswersHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	// Принимать оставшиеся ответы можно только после завершения раунда
+	// и только если ответили не все команды.
+	if game.Round.Open {
+		http.Error(w, "round is still open", 409)
+		return
+	}
+	if len(game.Teams) == 0 || len(game.Answers) >= len(game.Teams) {
+		http.Error(w, "all teams already answered", 409)
+		return
+	}
+
 	game.Round.Open = false
 	game.Round.ClosesAt = nil
 	game.Round.AcceptLate = true
@@ -241,7 +264,8 @@ func setScreenQRHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Show bool `json:"show"`
+		Show  bool   `json:"show"`
+		LanIP string `json:"lanIP"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", 400)
@@ -252,6 +276,11 @@ func setScreenQRHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	game.Round.ShowScreenQR = req.Show
+	if req.LanIP != "" {
+		game.Round.LanIP = strings.TrimSpace(req.LanIP)
+	} else {
+		game.Round.LanIP = ""
+	}
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -359,6 +388,31 @@ func resetHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func prevRoundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	game.Answers = map[string]*Answer{}
+	game.Round.Open = false
+	game.Round.AcceptLate = false
+	game.Round.OpenedAt = nil
+	game.Round.ClosesAt = nil
+	game.Round.Correct = ""
+	game.Round.Revealed = false
+
+	if game.Round.Number > 1 {
+		game.Round.Number--
+	}
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 func eventsHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -373,7 +427,7 @@ func eventsHandler(w http.ResponseWriter, r *http.Request) {
 	ch := make(chan []byte, 8)
 
 	mu.Lock()
-	game.Events[ch] = true
+	game.Events[ch] = eventSubscriber{isHost: checkHostSecret(r)}
 	initial, _ := json.Marshal(publicStateLocked(checkHostSecret(r)))
 	mu.Unlock()
 

@@ -34,6 +34,7 @@ type RoundState struct {
 	AllowChange  bool       `json:"allowChange"`
 	HideAnswers  bool       `json:"hideAnswers"`
 	ShowScreenQR bool       `json:"showScreenQR"`
+	LanIP        string     `json:"lanIP,omitempty"`
 	Correct      string     `json:"correct,omitempty"`
 	Revealed     bool       `json:"revealed"`
 }
@@ -85,8 +86,12 @@ type Game struct {
 	Round   RoundState
 	History []HistoryRow
 
-	Events map[chan []byte]bool
+	Events map[chan []byte]eventSubscriber
 	Dirty  bool
+}
+
+type eventSubscriber struct {
+	isHost bool
 }
 
 var (
@@ -101,7 +106,7 @@ func initGame(title, secret, dataPath string) {
 		DataPath: dataPath,
 		Teams:    map[string]*Team{},
 		Answers:  map[string]*Answer{},
-		Events:   map[chan []byte]bool{},
+		Events:   map[chan []byte]eventSubscriber{},
 		Round: RoundState{
 			Number:       1,
 			Open:         false,
@@ -122,6 +127,7 @@ func publicStateLocked(isHost bool) PublicState {
 	teams := make([]PublicTeam, 0, len(game.Teams))
 	onlineCount := 0
 	answeredCount := 0
+	totalTeams := len(game.Teams)
 
 	for _, t := range game.Teams {
 		if t.Online {
@@ -153,10 +159,17 @@ func publicStateLocked(isHost bool) PublicState {
 		return strings.ToLower(teams[i].Name) < strings.ToLower(teams[j].Name)
 	})
 
+	round := game.Round
+	allAnswered := totalTeams == 0 || answeredCount >= totalTeams
+	if !isHost && !allAnswered {
+		round.Correct = ""
+		round.Revealed = false
+	}
+
 	return PublicState{
 		Title:          game.Title,
 		ServerTimeUnix: time.Now().Unix(),
-		Round:          game.Round,
+		Round:          round,
 		Teams:          teams,
 		OnlineCount:    onlineCount,
 		AnsweredCount:  answeredCount,
@@ -172,8 +185,13 @@ func formatMMSS(totalSec int) string {
 }
 
 func broadcastLocked() {
-	payload, _ := json.Marshal(publicStateLocked(true))
-	for ch := range game.Events {
+	hostPayload, _ := json.Marshal(publicStateLocked(true))
+	publicPayload, _ := json.Marshal(publicStateLocked(false))
+	for ch, sub := range game.Events {
+		payload := publicPayload
+		if sub.isHost {
+			payload = hostPayload
+		}
 		select {
 		case ch <- payload:
 		default:
