@@ -1,0 +1,1002 @@
+package main
+
+const playerHTML = `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>LAN Quiz — Игрок</title>
+<style>
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#0b1020;
+  color:#fff;
+  padding:18px;
+}
+.wrap{
+  max-width:560px;
+  margin:0 auto;
+}
+.card{
+  background:#141b34;
+  border-radius:20px;
+  padding:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+input,button{
+  font-size:18px;
+  border-radius:12px;
+  padding:12px;
+}
+input{
+  width:100%;
+  box-sizing:border-box;
+  border:1px solid #2b3c6a;
+  background:#0c1430;
+  color:#fff;
+}
+input[type="checkbox"]{
+  width:auto;
+  padding:0;
+  margin:0;
+  accent-color:#4da3ff;
+}
+button{
+  border:none;
+  cursor:pointer;
+}
+.row{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.answers{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  margin-top:16px;
+}
+.answer{
+  min-height:86px;
+  font-size:32px;
+  font-weight:800;
+  background:#1a2446;
+  color:#fff;
+}
+.answer.active{
+  outline:3px solid #4fd18b;
+  background:#16322b;
+}
+.answer:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.muted{
+  color:#aab7dd;
+}
+.hidden{
+  display:none;
+}
+.box{
+  background:#0c1430;
+  border-radius:12px;
+  padding:12px;
+  margin-top:12px;
+}
+.status-ok{
+  background:#123322;
+}
+.status-warn{
+  background:#3a2e11;
+}
+.status-bad{
+  background:#441c24;
+}
+.small{
+  font-size:12px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1 id="title">LAN Quiz</h1>
+    <div class="muted">Игрок / команда</div>
+
+    <div id="joinBox">
+      <input id="teamName" placeholder="Название команды">
+      <div class="row" style="margin-top:12px">
+        <button onclick="join()">Подключиться</button>
+      </div>
+    </div>
+
+    <div id="gameBox" class="hidden">
+      <div class="box" id="status">Подключение...</div>
+
+      <div class="row">
+        <div class="box" style="flex:1">Команда: <b id="teamLabel">—</b></div>
+        <div class="box" style="flex:1">Раунд: <b id="roundLabel">—</b></div>
+      </div>
+
+      <div class="row">
+        <div class="box" style="flex:1">Таймер: <b id="timerLabel">—</b></div>
+        <div class="box" style="flex:1">Ваш ответ: <b id="myAnswerLabel">—</b></div>
+      </div>
+
+      <div class="answers">
+        <button class="answer" data-choice="A">A</button>
+        <button class="answer" data-choice="B">B</button>
+        <button class="answer" data-choice="C">C</button>
+        <button class="answer" data-choice="D">D</button>
+      </div>
+
+      <div class="small muted" style="margin-top:12px">
+        Если подключение пропало, перезагрузите страницу и подключитесь снова.
+      </div>
+
+      <details class="small muted" style="margin-top:14px">
+        <summary>Служебное</summary>
+        <div style="margin-top:8px">
+          <button onclick="changeTeam()" style="background:#3a2e11">Сменить команду</button>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script>
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+
+const teamIdKey='quiz_team_id';
+const teamNameKey='quiz_team_name';
+
+let teamId=localStorage.getItem(teamIdKey)||'';
+let teamName=localStorage.getItem(teamNameKey)||'';
+let state=null;
+let es=null;
+let connected=false;
+
+const $=id=>document.getElementById(id);
+
+if(teamName){
+  $('teamName').value=teamName;
+}
+
+document.querySelectorAll('.answer').forEach(btn=>{
+  btn.onclick=()=>sendAnswer(btn.dataset.choice);
+});
+
+function setStatus(text, kind=''){
+  const el=$('status');
+  el.textContent=text;
+  el.className='box';
+  if(kind==='ok') el.classList.add('status-ok');
+  if(kind==='warn') el.classList.add('status-warn');
+  if(kind==='bad') el.classList.add('status-bad');
+}
+
+async function api(url, method='GET', body=null){
+  const res=await fetch(url,{
+    method,
+    headers:{'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):null
+  });
+
+  if(!res.ok){
+    const txt = await res.text();
+    throw new Error(txt || ('HTTP '+res.status));
+  }
+
+  const ct=res.headers.get('content-type')||'';
+  if(ct.includes('application/json')){
+    return res.json();
+  }
+  return null;
+}
+
+async function join(){
+  try{
+    const name=$('teamName').value.trim();
+    if(!name){
+      alert('Введите название команды');
+      return;
+    }
+
+    setStatus('Подключаемся к серверу...', 'warn');
+
+    const data=await api('/api/join','POST',{teamName:name,teamId});
+
+    teamId=data.teamId;
+    teamName=data.name;
+
+    localStorage.setItem(teamIdKey,teamId);
+    localStorage.setItem(teamNameKey,teamName);
+
+    $('joinBox').classList.add('hidden');
+    $('gameBox').classList.remove('hidden');
+    $('teamLabel').textContent=teamName;
+
+    connect();
+    await refresh();
+
+    setStatus('Подключено', 'ok');
+  }catch(e){
+    console.error(e);
+    setStatus('Ошибка подключения', 'bad');
+    alert('Ошибка подключения: ' + (e.message || e));
+  }
+}
+
+async function refresh(){
+  try{
+    state=await api('/api/state');
+    render();
+  }catch(e){
+    console.error(e);
+    setStatus('Сервер недоступен', 'bad');
+  }
+}
+
+function connect(){
+  if(es) es.close();
+
+  es=new EventSource('/events');
+
+  es.onopen=()=>{
+    connected=true;
+  };
+
+  es.onmessage=e=>{
+    try{
+      const data=JSON.parse(e.data);
+      if(data.type==='keepalive') return;
+      state=data;
+      connected=true;
+      render();
+    }catch(err){
+      console.error(err);
+    }
+  };
+
+  es.onerror=()=>{
+    connected=false;
+    setStatus('Соединение потеряно. Пытаемся переподключиться...', 'warn');
+  };
+}
+
+function changeTeam(){
+  if(!confirm('Сменить команду? Текущее подключение будет сброшено.')) return;
+
+  if(es){
+    es.close();
+    es=null;
+  }
+
+  teamId='';
+  teamName='';
+  localStorage.removeItem(teamIdKey);
+  localStorage.removeItem(teamNameKey);
+
+  $('teamName').value='';
+  $('joinBox').classList.remove('hidden');
+  $('gameBox').classList.add('hidden');
+  setStatus('Введите новое название команды', 'warn');
+}
+
+function myTeam(){
+  if(!state || !state.teams) return null;
+  return state.teams.find(t=>t.id===teamId) || null;
+}
+
+function render(){
+  if(!state) return;
+
+  $('title').textContent=state.title || 'LAN Quiz';
+  $('roundLabel').textContent=state.round ? state.round.number : '—';
+
+  const me=myTeam();
+  const myAns=(me && me.choice) || '—';
+  $('myAnswerLabel').textContent=myAns;
+
+  if(!state.round.open){
+    if(state.round.revealed && state.round.correct){
+      setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct, 'ok');
+    }else{
+      setStatus('Раунд закрыт. Ждите следующий вопрос.', 'warn');
+    }
+  }else{
+    if(me && me.answered){
+      if(state.round.allowChange){
+        setStatus('Ответ принят. Можно изменить до конца раунда.', 'ok');
+      }else{
+        setStatus('Ответ принят.', 'ok');
+      }
+    }else{
+      setStatus('Раунд открыт. Выберите ответ.', 'ok');
+    }
+  }
+
+  document.querySelectorAll('.answer').forEach(btn=>{
+    const can = state.round.open && (!me || !me.answered || state.round.allowChange);
+    btn.disabled=!can;
+    btn.classList.toggle('active', myAns===btn.dataset.choice);
+  });
+}
+
+async function sendAnswer(choice){
+  try{
+    if(!teamId){
+      alert('Сначала подключитесь как команда');
+      return;
+    }
+    await api('/api/answer','POST',{teamId,choice});
+    await refresh();
+  }catch(e){
+    console.error(e);
+    alert('Ошибка отправки ответа: ' + (e.message || e));
+  }
+}
+
+setInterval(async()=>{
+  if(teamId){
+    try{
+      await api('/api/ping','POST',{teamId});
+    }catch(e){
+      console.error('Ping error', e);
+    }
+  }
+},5000);
+
+setInterval(()=>{
+  if(!state || !state.round || !state.round.open || !state.round.closesAt){
+    $('timerLabel').textContent='—';
+    return;
+  }
+
+  const end=new Date(state.round.closesAt).getTime();
+  let left=Math.max(0,Math.floor((end-Date.now())/1000));
+  $('timerLabel').textContent=
+    String(Math.floor(left/60)).padStart(2,'0')+':' +
+    String(left%60).padStart(2,'0');
+},250);
+
+if(teamId && teamName){
+  $('joinBox').classList.add('hidden');
+  $('gameBox').classList.remove('hidden');
+  $('teamLabel').textContent=teamName;
+  setStatus('Восстанавливаем подключение...', 'warn');
+  connect();
+  refresh();
+}else{
+  refresh();
+}
+</script>
+</body>
+</html>`
+
+const hostHTML = `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LAN Quiz — Ведущий</title>
+<style>
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#09111f;
+  color:#fff;
+  padding:18px;
+}
+.wrap{
+  max-width:1200px;
+  margin:0 auto;
+}
+.grid{
+  display:grid;
+  grid-template-columns:380px 1fr;
+  gap:16px;
+}
+@media (max-width: 980px){
+  .grid{grid-template-columns:1fr}
+}
+.card{
+  background:#121b31;
+  border-radius:20px;
+  padding:18px;
+  box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+input,button{
+  font-size:16px;
+  border-radius:12px;
+  padding:12px;
+}
+input{
+  width:100%;
+  box-sizing:border-box;
+  border:1px solid #2b3c6a;
+  background:#0c1430;
+  color:#fff;
+}
+button{
+  border:none;
+  cursor:pointer;
+}
+.row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.checkRow label{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.kpis{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+}
+.kpi{
+  background:#0c1530;
+  border-radius:14px;
+  padding:12px;
+}
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+th,td{
+  padding:10px;
+  border-bottom:1px solid #28385f;
+  text-align:left;
+}
+.hidden{
+  display:none;
+}
+.status{
+  margin-top:12px;
+  padding:10px 12px;
+  border-radius:12px;
+  background:#1c2542;
+}
+.qrBox{
+  margin-top:16px;
+}
+.qrWrap{
+  background:#fff;
+  padding:12px;
+  border-radius:14px;
+  display:inline-block;
+}
+.qrWrap img{
+  display:block;
+  width:220px;
+  height:220px;
+}
+.small{
+  font-size:12px;
+  color:#aab7dd;
+}
+.linkText{
+  word-break:break-all;
+}
+.revealBtn{
+  min-width:56px;
+  font-weight:700;
+  background:#1a2446;
+  color:#fff;
+}
+.revealBtn.selected{
+  outline:3px solid #4fd18b;
+  background:#16322b;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">LAN Quiz</h1>
+
+  <div class="grid">
+    <div class="card">
+      <div>IP в локальной сети: <span id="lanIps" class="linkText">—</span></div>
+      <div style="margin-top:8px">
+        IP для QR:
+        <select id="lanIpSelect" onchange="saveLanIPChoice()" style="margin-left:8px"></select>
+      </div>
+      <div>Игроки: <span id="playerLink" class="linkText">—</span></div>
+      <div>Ведущий: <span id="hostLink" class="linkText">—</span></div>
+      <div>Проектор: <span id="screenLink" class="linkText">—</span></div>
+
+      <div class="qrBox">
+        <div style="margin-bottom:8px">QR для игроков</div>
+        <div class="qrWrap">
+          <img id="qrImg" alt="QR code">
+        </div>
+        <div class="small" style="margin-top:8px">
+          Игроки могут открыть страницу, отсканировав QR-код.
+        </div>
+      </div>
+
+      <div id="secretBox" class="hidden" style="margin-top:12px">
+        <input id="secretInput" placeholder="Host secret">
+        <button onclick="saveSecret()" style="margin-top:8px">OK</button>
+      </div>
+
+      <div id="hostStatus" class="status">Подключение...</div>
+
+      <div style="margin-top:14px">Длительность (сек)</div>
+      <input id="duration" type="number" value="30">
+
+      <div class="row checkRow" style="margin-top:10px">
+        <label><input id="allowChange" type="checkbox" checked> Можно менять ответ</label>
+      </div>
+      <div class="row checkRow">
+        <label><input id="hideAnswers" type="checkbox" checked> Скрывать ответы до конца</label>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button onclick="openRound()">Открыть</button>
+        <button onclick="closeRound()">Закрыть</button>
+      </div>
+      <div class="row">
+        <button onclick="nextRound()">Следующий раунд</button>
+        <button onclick="fullReset()">Полный сброс</button>
+      </div>
+
+      <div style="margin-top:14px">Правильный ответ</div>
+      <div class="row">
+        <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
+        <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
+        <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
+        <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button onclick="downloadCSV()">Скачать CSV</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="kpis">
+        <div class="kpi">Раунд<br><b id="roundNo">—</b></div>
+        <div class="kpi">Онлайн<br><b id="onlineCount">0</b></div>
+        <div class="kpi">Ответили<br><b id="answeredCount">0</b></div>
+        <div class="kpi">Таймер<br><b id="timer">—</b></div>
+      </div>
+
+      <div id="roundStatus" style="margin-top:10px">—</div>
+      <div id="correctBox" style="margin-top:6px"></div>
+
+      <table style="margin-top:14px">
+        <thead>
+          <tr><th>Команда</th><th>Онлайн</th><th>Ответ</th><th>Время</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let state=null;
+let es=null;
+let hostSecret=localStorage.getItem('quiz_host_secret')||'';
+let selectedLanIP=localStorage.getItem('quiz_lan_ip')||'';
+
+const $=id=>document.getElementById(id);
+
+function setHostStatus(text){
+  $('hostStatus').textContent=text;
+}
+
+function isLoopbackHost(){
+  const host=window.location.hostname;
+  return host==='localhost' || host==='127.0.0.1' || host==='::1';
+}
+
+function headers(){
+  const h={'Content-Type':'application/json'};
+  if(hostSecret) h['X-Host-Secret']=hostSecret;
+  return h;
+}
+
+async function api(url, method='GET', body=null){
+  const res=await fetch(url,{
+    method,
+    headers:headers(),
+    body:body?JSON.stringify(body):null
+  });
+
+  if(res.status===403){
+    $('secretBox').classList.remove('hidden');
+    throw new Error('Нужен host secret');
+  }
+
+  if(!res.ok){
+    throw new Error(await res.text());
+  }
+
+  const ct=res.headers.get('content-type')||'';
+  if(ct.includes('application/json')) return res.json();
+  return null;
+}
+
+function saveSecret(){
+  hostSecret=$('secretInput').value.trim();
+  localStorage.setItem('quiz_host_secret', hostSecret);
+  $('secretBox').classList.add('hidden');
+  connect();
+  refresh();
+}
+
+async function refresh(){
+  try{
+    const qs=hostSecret?('?secret='+encodeURIComponent(hostSecret)):'';
+    const res=await fetch('/api/state'+qs,{headers:headers()});
+
+    if(res.status===403){
+      $('secretBox').classList.remove('hidden');
+      setHostStatus('Требуется host secret');
+      return;
+    }
+
+    state=await res.json();
+    render();
+    setHostStatus('Подключено');
+  }catch(e){
+    console.error(e);
+    setHostStatus('Ошибка получения состояния сервера');
+  }
+}
+
+function connect(){
+  if(es) es.close();
+
+  const qs=hostSecret?('?secret='+encodeURIComponent(hostSecret)):'';
+  es=new EventSource('/events'+qs);
+
+  es.onopen=()=>{
+    setHostStatus('Подключено');
+  };
+
+  es.onmessage=e=>{
+    try{
+      const data=JSON.parse(e.data);
+      if(data.type==='keepalive') return;
+      state=data;
+      render();
+      setHostStatus('Подключено');
+    }catch(err){
+      console.error(err);
+    }
+  };
+
+  es.onerror=()=>{
+    setHostStatus('Потеряно соединение с сервером');
+  };
+}
+
+function saveLanIPChoice(){
+  selectedLanIP=$('lanIpSelect').value;
+  localStorage.setItem('quiz_lan_ip', selectedLanIP);
+  render();
+}
+
+function syncLanIPSelect(){
+  const sel=$('lanIpSelect');
+  if(!sel) return;
+
+  const ips=(state && Array.isArray(state.ipHints)) ? state.ipHints : [];
+  const hasSelected=selectedLanIP && ips.includes(selectedLanIP);
+  if(selectedLanIP && !hasSelected){
+    selectedLanIP='';
+    localStorage.setItem('quiz_lan_ip','');
+  }
+
+  const oldVal=sel.value;
+  sel.innerHTML='';
+
+  const autoOpt=document.createElement('option');
+  autoOpt.value='';
+  autoOpt.textContent='Авто (первый IP)';
+  sel.appendChild(autoOpt);
+
+  for(const ip of ips){
+    const opt=document.createElement('option');
+    opt.value=ip;
+    opt.textContent=ip;
+    sel.appendChild(opt);
+  }
+
+  if(selectedLanIP && ips.includes(selectedLanIP)){
+    sel.value=selectedLanIP;
+  }else if(oldVal && ips.includes(oldVal)){
+    sel.value=oldVal;
+  }else{
+    sel.value='';
+  }
+}
+
+function selectedOrAutoLanIP(){
+  const ips=(state && Array.isArray(state.ipHints)) ? state.ipHints : [];
+  if(selectedLanIP && ips.includes(selectedLanIP)) return selectedLanIP;
+  if(ips.length>0) return ips[0];
+  return '';
+}
+
+function shareBaseURL(){
+  const origin=window.location.origin;
+  if(!isLoopbackHost()){
+    return origin;
+  }
+
+  const ip=selectedOrAutoLanIP();
+  if(ip){
+    const proto=window.location.protocol;
+    const port=window.location.port ? (':'+window.location.port) : '';
+    return proto+'//'+ip+port;
+  }
+
+  return origin;
+}
+
+function render(){
+  if(!state) return;
+
+  $('title').textContent=state.title || 'LAN Quiz';
+  $('roundNo').textContent=state.round.number;
+  $('onlineCount').textContent=state.onlineCount;
+  $('answeredCount').textContent=state.answeredCount;
+  $('roundStatus').textContent=state.round.open ? 'Раунд открыт' : 'Раунд закрыт';
+  $('correctBox').textContent=state.round.revealed && state.round.correct ? 'Правильный ответ: '+state.round.correct : '';
+  $('allowChange').checked=!!state.round.allowChange;
+  $('hideAnswers').checked=!!state.round.hideAnswers;
+
+  const base=shareBaseURL();
+  syncLanIPSelect();
+  $('lanIps').textContent=(state.ipHints && state.ipHints.length)
+    ? state.ipHints.join(', ')
+    : 'не найден';
+  const playerURL=base+'/';
+  $('playerLink').textContent=playerURL;
+  $('hostLink').textContent=base+'/host';
+  $('screenLink').textContent=base+'/screen';
+  $('qrImg').src='/qr.png?text='+encodeURIComponent(playerURL);
+
+  document.querySelectorAll('.revealBtn').forEach(btn=>{
+    const isSelected = !!state.round.correct && state.round.correct===btn.dataset.choice;
+    btn.classList.toggle('selected', isSelected);
+  });
+
+  const tbody=$('tbody');
+  tbody.innerHTML='';
+
+  for(const t of state.teams){
+    const tr=document.createElement('tr');
+    tr.innerHTML=
+      '<td>'+escapeHtml(t.name)+'</td>'+
+      '<td>'+(t.online?'да':'нет')+'</td>'+
+      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>'+
+      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function escapeHtml(s){
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+
+async function openRound(){
+  try{
+    await api('/api/host/open','POST',{
+      durationSec:parseInt($('duration').value||'0',10)||0,
+      allowChange:$('allowChange').checked,
+      hideAnswers:$('hideAnswers').checked
+    });
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function closeRound(){
+  try{
+    await api('/api/host/close','POST',{});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function nextRound(){
+  try{
+    await api('/api/host/reset','POST',{full:false});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function fullReset(){
+  if(!confirm('Сбросить всё?')) return;
+  try{
+    await api('/api/host/reset','POST',{full:true});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function reveal(c){
+  try{
+    await api('/api/host/reveal','POST',{correct:c});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+function downloadCSV(){
+  const qs=hostSecret?('?secret='+encodeURIComponent(hostSecret)):'';
+  location='/api/export.csv'+qs;
+}
+
+setInterval(()=>{
+  if(!state || !state.round.open || !state.round.closesAt){
+    $('timer').textContent='—';
+    return;
+  }
+  const end=new Date(state.round.closesAt).getTime();
+  let left=Math.max(0,Math.floor((end-Date.now())/1000));
+  $('timer').textContent=
+    String(Math.floor(left/60)).padStart(2,'0')+':' +
+    String(left%60).padStart(2,'0');
+},250);
+
+connect();
+refresh();
+</script>
+</body>
+</html>`
+
+const screenHTML = `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LAN Quiz — Экран</title>
+<style>
+body{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:#050814;
+  color:#fff;
+  padding:24px;
+}
+h1{
+  font-size:42px;
+  margin:0 0 12px;
+}
+.kpis{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+  margin-bottom:20px;
+}
+.kpi{
+  background:#111a2f;
+  border-radius:18px;
+  padding:18px;
+  font-size:24px;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+}
+.card{
+  background:#111a2f;
+  border-radius:18px;
+  padding:18px;
+  min-height:120px;
+}
+.name{
+  font-size:28px;
+  font-weight:700;
+}
+.answer{
+  font-size:52px;
+  font-weight:900;
+  margin-top:10px;
+}
+.small{
+  color:#aab7dd;
+}
+@media (max-width:1000px){
+  .grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<h1 id="title">LAN Quiz</h1>
+<div class="kpis">
+  <div class="kpi">Раунд<br><b id="roundNo">—</b></div>
+  <div class="kpi">Онлайн<br><b id="onlineCount">0</b></div>
+  <div class="kpi">Ответили<br><b id="answeredCount">0</b></div>
+  <div class="kpi">Таймер<br><b id="timer">—</b></div>
+</div>
+<div id="status" class="small" style="font-size:24px;margin-bottom:18px">—</div>
+<div id="teams" class="grid"></div>
+
+<script>
+let state=null;
+let es=new EventSource('/events');
+
+es.onmessage=e=>{
+  const data=JSON.parse(e.data);
+  if(data.type==='keepalive') return;
+  state=data;
+  render();
+};
+
+function escapeHtml(s){
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+
+function render(){
+  if(!state) return;
+
+  document.getElementById('title').textContent=state.title;
+  document.getElementById('roundNo').textContent=state.round.number;
+  document.getElementById('onlineCount').textContent=state.onlineCount;
+  document.getElementById('answeredCount').textContent=state.answeredCount;
+
+  document.getElementById('status').textContent =
+    state.round.open
+      ? 'Раунд открыт'
+      : (state.round.revealed && state.round.correct
+          ? 'Раунд закрыт. Правильный ответ: ' + state.round.correct
+          : 'Раунд закрыт');
+
+  const root=document.getElementById('teams');
+  root.innerHTML='';
+
+  for(const t of state.teams){
+    const div=document.createElement('div');
+    div.className='card';
+    const hideOnScreen = state.round.open && state.round && state.round.hideAnswers === true;
+    const shownChoice = hideOnScreen ? '' : (t.choice || '');
+    div.innerHTML =
+      '<div class="name">'+escapeHtml(t.name)+'</div>' +
+      '<div class="small">'+(t.online ? 'онлайн' : 'офлайн')+'</div>' +
+      '<div class="answer">'+(shownChoice ? escapeHtml(shownChoice) : '—')+'</div>';
+    root.appendChild(div);
+  }
+}
+
+setInterval(()=>{
+  if(!state || !state.round.open || !state.round.closesAt){
+    document.getElementById('timer').textContent='—';
+    return;
+  }
+  const end=new Date(state.round.closesAt).getTime();
+  let left=Math.max(0,Math.floor((end-Date.now())/1000));
+  document.getElementById('timer').textContent =
+    String(Math.floor(left/60)).padStart(2,'0') + ':' +
+    String(left%60).padStart(2,'0');
+},250);
+</script>
+</body>
+</html>`
