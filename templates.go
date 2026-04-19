@@ -69,6 +69,14 @@ button{
   outline:3px solid #4fd18b;
   background:#16322b;
 }
+.answer.correct{
+  outline:3px solid #4fd18b;
+  background:#16322b;
+}
+.answer.wrong{
+  outline:3px solid #ff6b6b;
+  background:#4a1f2b;
+}
 .answer:disabled{
   opacity:.55;
   cursor:not-allowed;
@@ -97,13 +105,34 @@ button{
 .small{
   font-size:12px;
 }
+.myAnswerRight{
+  background:#123322;
+}
+.myAnswerWrong{
+  background:#441c24;
+}
+.playerStatsTitle{
+  margin-top:14px;
+  color:#d6e3ff;
+  font-weight:700;
+}
+.playerStatsTable{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:8px;
+}
+.playerStatsTable th,
+.playerStatsTable td{
+  border-bottom:1px solid #2b3c6a;
+  padding:8px;
+  text-align:center;
+}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
     <h1 id="title">LAN Quiz</h1>
-    <div class="muted">Игрок / команда</div>
 
     <div id="joinBox">
       <input id="teamName" placeholder="Название команды">
@@ -122,7 +151,7 @@ button{
 
       <div class="row">
         <div class="box" style="flex:1">Таймер: <b id="timerLabel">—</b></div>
-        <div class="box" style="flex:1">Ваш ответ: <b id="myAnswerLabel">—</b></div>
+        <div id="myAnswerBox" class="box" style="flex:1">Ваш ответ: <b id="myAnswerLabel">—</b></div>
       </div>
 
       <div class="answers">
@@ -132,9 +161,11 @@ button{
         <button class="answer" data-choice="D">D</button>
       </div>
 
-      <div class="small muted" style="margin-top:12px">
-        Если подключение пропало, перезагрузите страницу и подключитесь снова.
-      </div>
+      <div class="playerStatsTitle">Ваша статистика по раундам</div>
+      <table class="playerStatsTable">
+        <thead id="playerStatsHead"></thead>
+        <tbody id="playerStatsBody"></tbody>
+      </table>
 
       <details class="small muted" style="margin-top:14px">
         <summary>Служебное</summary>
@@ -159,6 +190,7 @@ let teamName=localStorage.getItem(teamNameKey)||'';
 let state=null;
 let es=null;
 let connected=false;
+let serverTimeOffsetMs=0;
 
 const $=id=>document.getElementById(id);
 
@@ -177,6 +209,15 @@ function setStatus(text, kind=''){
   if(kind==='ok') el.classList.add('status-ok');
   if(kind==='warn') el.classList.add('status-warn');
   if(kind==='bad') el.classList.add('status-bad');
+}
+
+function syncServerClockOffset(data){
+  if(!data || typeof data.serverTimeUnix!=='number') return;
+  serverTimeOffsetMs = data.serverTimeUnix*1000 - Date.now();
+}
+
+function nowByServerClockMs(){
+  return Date.now() + serverTimeOffsetMs;
 }
 
 async function api(url, method='GET', body=null){
@@ -234,6 +275,7 @@ async function join(){
 async function refresh(){
   try{
     state=await api('/api/state');
+    syncServerClockOffset(state);
     render();
   }catch(e){
     console.error(e);
@@ -255,6 +297,7 @@ function connect(){
       const data=JSON.parse(e.data);
       if(data.type==='keepalive') return;
       state=data;
+      syncServerClockOffset(state);
       connected=true;
       render();
     }catch(err){
@@ -292,6 +335,18 @@ function myTeam(){
   return state.teams.find(t=>t.id===teamId) || null;
 }
 
+function resetToJoinBecauseRemoved(){
+  if(es){
+    es.close();
+    es=null;
+  }
+  teamId='';
+  localStorage.removeItem(teamIdKey);
+  $('joinBox').classList.remove('hidden');
+  $('gameBox').classList.add('hidden');
+  setStatus('Команда удалена ведущим. Введите название и подключитесь снова.', 'warn');
+}
+
 function render(){
   if(!state) return;
 
@@ -299,8 +354,21 @@ function render(){
   $('roundLabel').textContent=state.round ? state.round.number : '—';
 
   const me=myTeam();
+  if(teamId && !me){
+    resetToJoinBecauseRemoved();
+    return;
+  }
   const myAns=(me && me.choice) || '—';
   $('myAnswerLabel').textContent=myAns;
+  const myAnswerBox=$('myAnswerBox');
+  myAnswerBox.classList.remove('myAnswerRight','myAnswerWrong');
+
+  const roundNo=state.round ? Number(state.round.number||0) : 0;
+  const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
+  const teamStats=Array.isArray(state.teamStats) ? state.teamStats : [];
+  const myStats=teamStats.find(ts=>String(ts.teamId||'')===String(teamId||'')) || null;
+  const idx=rounds.indexOf(roundNo);
+  const currentResult=(myStats && idx>=0 && Array.isArray(myStats.roundResults)) ? (myStats.roundResults[idx]||'') : '';
 
   if(state.round.acceptLate){
     if(me && me.answered){
@@ -310,7 +378,15 @@ function render(){
     }
   }else if(!state.round.open){
     if(state.round.revealed && state.round.correct){
-      setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct, 'ok');
+      if(currentResult==='right'){
+        myAnswerBox.classList.add('myAnswerRight');
+        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: верно.', 'ok');
+      }else if(currentResult==='wrong'){
+        myAnswerBox.classList.add('myAnswerWrong');
+        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: неверно.', 'bad');
+      }else{
+        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct, 'ok');
+      }
     }else{
       setStatus('Раунд закрыт. Ждите следующий вопрос.', 'warn');
     }
@@ -331,8 +407,53 @@ function render(){
     const canLate = state.round.acceptLate && (!me || !me.answered);
     const can = canRoundOpen || canLate;
     btn.disabled=!can;
-    btn.classList.toggle('active', myAns===btn.dataset.choice);
+
+    const isMyChoice = myAns===btn.dataset.choice;
+    const showRevealColors = !state.round.open && !!state.round.revealed && !!state.round.correct && currentResult==='wrong';
+    const isCorrectChoice = state.round.correct===btn.dataset.choice;
+
+    btn.classList.toggle('active', isMyChoice && !showRevealColors);
+    btn.classList.toggle('wrong', showRevealColors && isMyChoice);
+    btn.classList.toggle('correct', showRevealColors && isCorrectChoice);
   });
+
+  renderPlayerStats();
+}
+
+function renderPlayerStats(){
+  const head=$('playerStatsHead');
+  const body=$('playerStatsBody');
+  head.innerHTML='';
+  body.innerHTML='';
+
+  const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
+  const teamStats=Array.isArray(state.teamStats) ? state.teamStats : [];
+  const myStats=teamStats.find(ts=>String(ts.teamId||'')===String(teamId||'')) || null;
+
+  const trHead=document.createElement('tr');
+  trHead.innerHTML='<th>Раунды</th>' + rounds.map(r=>'<th>'+r+'</th>').join('') + '<th>Счёт</th>';
+  head.appendChild(trHead);
+
+  if(!myStats){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td colspan="'+(rounds.length+2)+'">Нет данных</td>';
+    body.appendChild(tr);
+    return;
+  }
+
+  const tr=document.createElement('tr');
+  const results=Array.isArray(myStats.roundResults) ? myStats.roundResults : [];
+  tr.innerHTML='<td>Результат</td>' +
+    rounds.map((_,i)=>'<td>'+playerStatusMark(results[i]||'noanswer')+'</td>').join('') +
+    '<td><b>'+Number(myStats.totalScore||0)+'</b></td>';
+  body.appendChild(tr);
+}
+
+function playerStatusMark(status){
+  if(status==='right') return '✅';
+  if(status==='wrong') return '❌';
+  if(status==='pending') return '⏳';
+  return '—';
 }
 
 async function sendAnswer(choice){
@@ -354,6 +475,11 @@ setInterval(async()=>{
     try{
       await api('/api/ping','POST',{teamId});
     }catch(e){
+      const msg=String((e && e.message) || e || '');
+      if(msg.includes('unknown team')){
+        resetToJoinBecauseRemoved();
+        return;
+      }
       console.error('Ping error', e);
     }
   }
@@ -366,7 +492,7 @@ setInterval(()=>{
   }
 
   const end=new Date(state.round.closesAt).getTime();
-  let left=Math.max(0,Math.floor((end-Date.now())/1000));
+  let left=Math.max(0,Math.floor((end-nowByServerClockMs())/1000));
   $('timerLabel').textContent=
     String(Math.floor(left/60)).padStart(2,'0')+':' +
     String(left%60).padStart(2,'0');
@@ -572,6 +698,28 @@ th,td{
   font-size:13px;
   padding:8px 10px;
 }
+.statsTitle{
+  margin:18px 0 8px;
+  font-size:18px;
+  color:#d6e3ff;
+}
+.statsTable th,
+.statsTable td{
+  text-align:center;
+}
+.statsTable th:first-child,
+.statsTable td:first-child{
+  text-align:left;
+}
+.statsCell.right{
+  background:#123322;
+}
+.statsCell.wrong{
+  background:#441c24;
+}
+.statsCell.pending{
+  background:#3a2e11;
+}
 </style>
 </head>
 <body>
@@ -601,9 +749,6 @@ th,td{
           </div>
         </div>
 
-        <div class="row" style="margin-top:12px">
-          <button class="roundBtn reset" onclick="fullReset()">Полный сброс</button>
-        </div>
       </details>
 
       <div class="row checkRow" style="margin-top:10px">
@@ -621,34 +766,44 @@ th,td{
       <div class="row checkRow" style="margin-top:10px">
         <label><input id="allowChange" type="checkbox" checked> Можно менять ответ</label>
       </div>
-      <div class="row checkRow">
-        <label><input id="hideAnswers" type="checkbox" checked> Скрывать ответы до конца</label>
-      </div>
       <div class="controlGroup roundGroup">
         <h3>Управление раундом</h3>
-        <div class="row roundMainRow">
-          <button class="roundBtn open" onclick="openRound()">Начать</button>
+        <div class="controlGroup answerGroup" style="margin-top:0">
+          <h3>Правильный ответ</h3>
+          <div class="row">
+            <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
+            <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
+            <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
+            <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
+          </div>
+          <div id="currentCorrectLabel" class="small" style="margin-top:8px">Текущий правильный ответ: —</div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <button id="nextRoundBtn" class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
+        </div>
+        <div class="row" style="margin-top:10px">
           <button class="roundBtn close" onclick="closeRound()">Завершить</button>
         </div>
         <div class="row" style="margin-top:10px">
           <button id="acceptLateBtn" class="roundBtn close" onclick="acceptLateAnswers()" disabled>Принять оставшиеся ответы</button>
         </div>
-        <div class="row" style="margin-top:10px">
-          <button class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
-        </div>
-        <div class="row" style="margin-top:10px">
-          <button class="roundBtn prev" onclick="prevRound()">Предыдущий раунд</button>
-        </div>
-      </div>
 
-      <div class="controlGroup answerGroup">
-        <h3>Правильный ответ</h3>
-        <div class="row">
-          <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
-          <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
-          <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
-          <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
-        </div>
+        <details class="detailsBlock" style="margin-top:10px">
+          <summary>Дополнительные действия</summary>
+          <div class="row roundMainRow" style="margin-top:10px">
+            <button class="roundBtn open" onclick="openRound()">Начать</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="roundBtn prev" onclick="prevRound()">Предыдущий раунд</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="roundBtn close" onclick="replayRound()">Переиграть раунд</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="roundBtn reset" onclick="fullReset()">Сброс статистики и раундов</button>
+          </div>
+        </details>
       </div>
 
       <div id="hostStatus" class="status" style="margin-top:16px">Подключение...</div>
@@ -672,6 +827,12 @@ th,td{
         </thead>
         <tbody id="tbody"></tbody>
       </table>
+
+      <div class="statsTitle">Статистика по раундам</div>
+      <table class="statsTable">
+        <thead id="statsHead"></thead>
+        <tbody id="statsBody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -682,11 +843,21 @@ let state=null;
 let es=null;
 let hostSecret=localStorage.getItem('quiz_host_secret')||'';
 let selectedLanIP=localStorage.getItem('quiz_lan_ip')||'';
+let hostServerTimeOffsetMs=0;
 
 const $=id=>document.getElementById(id);
 
 function setHostStatus(text){
   $('hostStatus').textContent=text;
+}
+
+function syncHostServerClockOffset(data){
+  if(!data || typeof data.serverTimeUnix!=='number') return;
+  hostServerTimeOffsetMs = data.serverTimeUnix*1000 - Date.now();
+}
+
+function hostNowByServerClockMs(){
+  return Date.now() + hostServerTimeOffsetMs;
 }
 
 function isLoopbackHost(){
@@ -741,6 +912,7 @@ async function refresh(){
     }
 
     state=await res.json();
+    syncHostServerClockOffset(state);
     render();
     setHostStatus('Подключено');
   }catch(e){
@@ -764,6 +936,7 @@ function connect(){
       const data=JSON.parse(e.data);
       if(data.type==='keepalive') return;
       state=data;
+      syncHostServerClockOffset(state);
       render();
       setHostStatus('Подключено');
     }catch(err){
@@ -858,17 +1031,19 @@ function render(){
   const totalTeams=Array.isArray(state.teams) ? state.teams.length : 0;
   const allAnswered=totalTeams===0 || state.answeredCount>=totalTeams;
   const canAcceptLate = !state.round.open && !state.round.acceptLate && totalTeams>0 && !allAnswered;
+  const canGoNextRound = !state.round.open && !state.round.acceptLate && !!state.round.revealed && !!state.round.correct;
   $('acceptLateBtn').disabled = !canAcceptLate;
+  $('nextRoundBtn').disabled = !canGoNextRound;
   if(state.round.acceptLate){
     $('roundStatus').textContent='Приём оставшихся ответов (без таймера)';
   }else{
     $('roundStatus').textContent=state.round.open ? 'Раунд открыт' : 'Раунд закрыт';
   }
-  $('correctBox').textContent=(allAnswered && state.round.revealed && state.round.correct)
+  $('correctBox').textContent=(state.round.revealed && state.round.correct)
     ? 'Правильный ответ: '+state.round.correct
     : '';
+  $('currentCorrectLabel').textContent='Текущий правильный ответ: ' + (state.round.correct || '—');
   $('allowChange').checked=!!state.round.allowChange;
-  $('hideAnswers').checked=!!state.round.hideAnswers;
   $('showScreenQR').checked=!!state.round.showScreenQR;
 
   const base=shareBaseURL();
@@ -885,12 +1060,17 @@ function render(){
   document.querySelectorAll('.revealBtn').forEach(btn=>{
     const isSelected = !!state.round.correct && state.round.correct===btn.dataset.choice;
     btn.classList.toggle('selected', isSelected);
+    btn.disabled = !state.round.open && !!state.round.revealed;
   });
 
   const tbody=$('tbody');
   tbody.innerHTML='';
 
-  for(const t of state.teams){
+  const teamsSorted = Array.isArray(state.teams)
+    ? [...state.teams].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ru',{sensitivity:'base'}))
+    : [];
+
+  for(const t of teamsSorted){
     const tr=document.createElement('tr');
     tr.innerHTML=
       '<td>'+escapeHtml(t.name)+'</td>'+
@@ -911,6 +1091,60 @@ function render(){
 
     tbody.appendChild(tr);
   }
+
+  renderStats();
+}
+
+function renderStats(){
+  const head=$('statsHead');
+  const body=$('statsBody');
+  head.innerHTML='';
+  body.innerHTML='';
+
+  const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
+  const teamStats=Array.isArray(state.teamStats)
+    ? [...state.teamStats].sort((a,b)=>String(a.teamName||'').localeCompare(String(b.teamName||''),'ru',{sensitivity:'base'}))
+    : [];
+
+  const trHead=document.createElement('tr');
+  trHead.innerHTML='<th>Команда</th>' +
+    rounds.map(()=>'<th></th>').join('') +
+    '<th>Счёт</th>';
+  head.appendChild(trHead);
+
+  if(teamStats.length===0){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td colspan="'+(rounds.length+2)+'">Нет данных</td>';
+    body.appendChild(tr);
+    return;
+  }
+
+  for(const ts of teamStats){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+escapeHtml(ts.teamName||'—')+'</td>';
+
+    const results=Array.isArray(ts.roundResults) ? ts.roundResults : [];
+    for(let i=0;i<rounds.length;i++){
+      const status=results[i] || 'noanswer';
+      const td=document.createElement('td');
+      td.className='statsCell ' + (status==='right' || status==='wrong' || status==='pending' ? status : '');
+      td.textContent = statusToMark(status);
+      tr.appendChild(td);
+    }
+
+    const scoreTd=document.createElement('td');
+    scoreTd.innerHTML='<b>'+Number(ts.totalScore||0)+'</b>';
+    tr.appendChild(scoreTd);
+
+    body.appendChild(tr);
+  }
+}
+
+function statusToMark(status){
+  if(status==='right') return '✅';
+  if(status==='wrong') return '❌';
+  if(status==='pending') return '⏳';
+  return '—';
 }
 
 function escapeHtml(s){
@@ -927,7 +1161,6 @@ async function openRound(){
     await api('/api/host/open','POST',{
       durationSec:parseInt($('duration').value||'0',10)||0,
       allowChange:$('allowChange').checked,
-      hideAnswers:$('hideAnswers').checked,
       showScreenQR:$('showScreenQR').checked
     });
   }catch(e){
@@ -979,9 +1212,11 @@ async function prevRound(){
 }
 
 async function fullReset(){
-  if(!confirm('Сбросить всё?')) return;
+  if(!confirm('Сбросить статистику, очистить историю и вернуть счётчик раундов к 1?')) return;
   try{
-    await api('/api/host/reset','POST',{full:true});
+    const res=await api('/api/host/reset','POST',{full:true});
+    const csvPath=(res && res.csvPath) ? String(res.csvPath) : '';
+    setHostStatus(csvPath ? ('Статистика сохранена: '+csvPath) : 'Статистика сброшена');
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
   }
@@ -989,7 +1224,27 @@ async function fullReset(){
 
 async function reveal(c){
   try{
+    if(state && state.round && !state.round.open && state.round.revealed){
+      alert('Раунд уже сыгран. Нажмите «Переиграть раунд», чтобы выбрать правильный ответ заново.');
+      return;
+    }
+    if(state && state.round && !state.round.open){
+      await api('/api/host/open','POST',{
+        durationSec:parseInt($('duration').value||'0',10)||0,
+        allowChange:$('allowChange').checked,
+        showScreenQR:$('showScreenQR').checked
+      });
+    }
     await api('/api/host/reveal','POST',{correct:c});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function replayRound(){
+  if(!confirm('Переиграть текущий раунд? Ответы и проверка этого раунда будут очищены.')) return;
+  try{
+    await api('/api/host/replay-round','POST',{});
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
   }
@@ -1011,7 +1266,7 @@ setInterval(()=>{
     return;
   }
   const end=new Date(state.round.closesAt).getTime();
-  let left=Math.max(0,Math.floor((end-Date.now())/1000));
+  let left=Math.max(0,Math.floor((end-hostNowByServerClockMs())/1000));
   $('timer').textContent=
     String(Math.floor(left/60)).padStart(2,'0')+':' +
     String(left%60).padStart(2,'0');
@@ -1041,43 +1296,34 @@ h1{
   font-size:42px;
   margin:0 0 12px;
 }
-.kpis{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:16px;
-  margin-bottom:20px;
-}
-.kpi{
-  background:#111a2f;
-  border-radius:18px;
-  padding:18px;
-  font-size:24px;
-}
-.grid{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:16px;
-}
-.card{
-  background:#111a2f;
-  border-radius:18px;
-  padding:18px;
-  min-height:120px;
-}
-.name{
-  font-size:28px;
-  font-weight:700;
-}
-.answer{
-  font-size:52px;
-  font-weight:900;
-  margin-top:10px;
-}
 .small{
   color:#aab7dd;
 }
 .hidden{
   display:none;
+}
+.statsTitle{
+  margin:16px 0 10px;
+  font-size:24px;
+  color:#d6e3ff;
+}
+.statsTable{
+  width:100%;
+  border-collapse:collapse;
+  background:#111a2f;
+  border-radius:14px;
+  overflow:hidden;
+}
+.statsTable th,
+.statsTable td{
+  border-bottom:1px solid #2b3c6a;
+  padding:12px;
+  text-align:center;
+  font-size:22px;
+}
+.statsTable th:first-child,
+.statsTable td:first-child{
+  text-align:left;
 }
 .qrBlock{
   margin-top:18px;
@@ -1094,21 +1340,15 @@ h1{
   width:220px;
   height:220px;
 }
-@media (max-width:1000px){
-  .grid{grid-template-columns:repeat(2,1fr)}
-}
 </style>
 </head>
 <body>
 <h1 id="title">LAN Quiz</h1>
-<div class="kpis">
-  <div class="kpi">Раунд<br><b id="roundNo">—</b></div>
-  <div class="kpi">Онлайн<br><b id="onlineCount">0</b></div>
-  <div class="kpi">Ответили<br><b id="answeredCount">0</b></div>
-  <div class="kpi">Таймер<br><b id="timer">—</b></div>
-</div>
-<div id="status" class="small" style="font-size:24px;margin-bottom:18px">—</div>
-<div id="teams" class="grid"></div>
+<div class="statsTitle">Статистика команд</div>
+<table class="statsTable">
+  <thead id="screenStatsHead"></thead>
+  <tbody id="screenStatsBody"></tbody>
+</table>
 <div class="qrBlock">
   <div class="small" style="font-size:20px;margin-bottom:8px">Подключение игроков</div>
   <div class="qrWrap">
@@ -1166,55 +1406,63 @@ function escapeHtml(s){
 function render(){
   if(!state) return;
 
-  const totalTeams=Array.isArray(state.teams) ? state.teams.length : 0;
-  const allAnswered=totalTeams===0 || state.answeredCount>=totalTeams;
-
   document.getElementById('title').textContent=state.title;
-  document.getElementById('roundNo').textContent=state.round.number;
-  document.getElementById('onlineCount').textContent=state.onlineCount;
-  document.getElementById('answeredCount').textContent=state.answeredCount;
 
-  document.getElementById('status').textContent =
-    state.round.open
-      ? 'Раунд открыт'
-      : (state.round.acceptLate
-          ? 'Принимаются оставшиеся ответы'
-          : (allAnswered && state.round.revealed && state.round.correct
-          ? 'Раунд закрыт. Правильный ответ: ' + state.round.correct
-          : 'Раунд закрыт'));
-
-  const root=document.getElementById('teams');
-  root.innerHTML='';
+  renderScreenStats();
 
   const playerURL=playerURLForShare();
   document.getElementById('playerQr').src='/qr.png?text='+encodeURIComponent(playerURL);
   document.getElementById('playerUrl').textContent=playerURL;
   document.querySelector('.qrBlock').classList.toggle('hidden', !state.round.showScreenQR);
+}
 
-  for(const t of state.teams){
-    const div=document.createElement('div');
-    div.className='card';
-    const hideOnScreen = !allAnswered || (state.round.open && state.round && state.round.hideAnswers === true);
-    const shownChoice = hideOnScreen ? '' : (t.choice || '');
-    div.innerHTML =
-      '<div class="name">'+escapeHtml(t.name)+'</div>' +
-      '<div class="small">'+(t.online ? 'онлайн' : 'офлайн')+'</div>' +
-      '<div class="answer">'+(shownChoice ? escapeHtml(shownChoice) : '—')+'</div>';
-    root.appendChild(div);
+function renderScreenStats(){
+  const head=document.getElementById('screenStatsHead');
+  const body=document.getElementById('screenStatsBody');
+  head.innerHTML='';
+  body.innerHTML='';
+
+  const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
+  const teamStats=Array.isArray(state.teamStats)
+    ? [...state.teamStats].sort((a,b)=>String(a.teamName||'').localeCompare(String(b.teamName||''),'ru',{sensitivity:'base'}))
+    : [];
+
+  const trHead=document.createElement('tr');
+  trHead.innerHTML='<th>Команда</th>' + rounds.map(()=>'<th></th>').join('') + '<th>Счёт</th>';
+  head.appendChild(trHead);
+
+  if(teamStats.length===0){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td colspan="'+(rounds.length+2)+'">Нет данных</td>';
+    body.appendChild(tr);
+    return;
+  }
+
+  for(const ts of teamStats){
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+escapeHtml(ts.teamName||'—')+'</td>';
+
+    const results=Array.isArray(ts.roundResults) ? ts.roundResults : [];
+    for(let i=0;i<rounds.length;i++){
+      const status=results[i] || 'noanswer';
+      const td=document.createElement('td');
+      td.textContent = statusMark(status);
+      tr.appendChild(td);
+    }
+
+    const scoreTd=document.createElement('td');
+    scoreTd.innerHTML='<b>'+Number(ts.totalScore||0)+'</b>';
+    tr.appendChild(scoreTd);
+    body.appendChild(tr);
   }
 }
 
-setInterval(()=>{
-  if(!state || !state.round.open || !state.round.closesAt){
-    document.getElementById('timer').textContent='—';
-    return;
-  }
-  const end=new Date(state.round.closesAt).getTime();
-  let left=Math.max(0,Math.floor((end-Date.now())/1000));
-  document.getElementById('timer').textContent =
-    String(Math.floor(left/60)).padStart(2,'0') + ':' +
-    String(left%60).padStart(2,'0');
-},250);
+function statusMark(status){
+  if(status==='right') return '✅';
+  if(status==='wrong') return '❌';
+  if(status==='pending') return '⏳';
+  return '—';
+}
 </script>
 </body>
 </html>`

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -59,6 +62,11 @@ func loadState() {
 	}
 	game.Round = ps.Round
 	game.History = ps.History
+
+	// После перезапуска сервера выбор правильного ответа текущего раунда
+	// не переносим: новый запуск начинается без выбранного варианта.
+	game.Round.Correct = ""
+	game.Round.Revealed = false
 }
 
 func autosaveLoop() {
@@ -76,5 +84,66 @@ func autosaveLoop() {
 			game.Dirty = false
 			mu.Unlock()
 		}
+	}
+}
+
+func exportStatsCSVLocked() (string, error) {
+	if err := os.MkdirAll("data/stats", 0755); err != nil {
+		return "", err
+	}
+
+	stamp := time.Now().Format("20060102-150405")
+	filePath := filepath.Join("data", "stats", fmt.Sprintf("stats-%s.csv", stamp))
+
+	f, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	// BOM нужен для корректного открытия UTF-8 CSV в Excel на Windows.
+	if _, err := f.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+		return "", err
+	}
+
+	w := csv.NewWriter(f)
+
+	rounds, stats := buildTeamStatsLocked()
+	header := []string{"Название команды", "Общий счёт"}
+	for _, r := range rounds {
+		header = append(header, fmt.Sprintf("Раунд %d", r))
+	}
+	if err := w.Write(header); err != nil {
+		return "", err
+	}
+
+	for _, ts := range stats {
+		row := []string{ts.TeamName, strconv.Itoa(ts.TotalScore)}
+		for _, rr := range ts.RoundResults {
+			row = append(row, roundResultRU(rr))
+		}
+		if err := w.Write(row); err != nil {
+			return "", err
+		}
+	}
+
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
+func roundResultRU(status string) string {
+	switch status {
+	case "right":
+		return "Верно"
+	case "wrong":
+		return "Неверно"
+	case "pending":
+		return "Без проверки"
+	default:
+		return "Нет ответа"
 	}
 }

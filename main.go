@@ -43,6 +43,7 @@ func main() {
 	http.HandleFunc("/api/host/reset", hostOnly(resetHandler))
 	http.HandleFunc("/api/host/prev-round", hostOnly(prevRoundHandler))
 	http.HandleFunc("/api/host/reveal", hostOnly(revealHandler))
+	http.HandleFunc("/api/host/replay-round", hostOnly(replayRoundHandler))
 	http.HandleFunc("/api/host/screen-qr", hostOnly(setScreenQRHandler))
 	http.HandleFunc("/api/host/team/remove", hostOnly(removeTeamHandler))
 

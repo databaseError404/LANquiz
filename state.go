@@ -65,7 +65,16 @@ type PublicState struct {
 	Teams          []PublicTeam `json:"teams"`
 	OnlineCount    int          `json:"onlineCount"`
 	AnsweredCount  int          `json:"answeredCount"`
+	StatsRounds    []int        `json:"statsRounds,omitempty"`
+	TeamStats      []TeamStats  `json:"teamStats,omitempty"`
 	IPHints        []string     `json:"ipHints,omitempty"`
+}
+
+type TeamStats struct {
+	TeamID       string   `json:"teamId"`
+	TeamName     string   `json:"teamName"`
+	TotalScore   int      `json:"totalScore"`
+	RoundResults []string `json:"roundResults"`
 }
 
 type PersistedState struct {
@@ -128,6 +137,8 @@ func publicStateLocked(isHost bool) PublicState {
 	onlineCount := 0
 	answeredCount := 0
 	totalTeams := len(game.Teams)
+	statsRounds := []int(nil)
+	teamStats := []TeamStats(nil)
 
 	for _, t := range game.Teams {
 		if t.Online {
@@ -165,6 +176,7 @@ func publicStateLocked(isHost bool) PublicState {
 		round.Correct = ""
 		round.Revealed = false
 	}
+	statsRounds, teamStats = buildTeamStatsLocked()
 
 	return PublicState{
 		Title:          game.Title,
@@ -173,8 +185,107 @@ func publicStateLocked(isHost bool) PublicState {
 		Teams:          teams,
 		OnlineCount:    onlineCount,
 		AnsweredCount:  answeredCount,
+		StatsRounds:    statsRounds,
+		TeamStats:      teamStats,
 		IPHints:        localIPs(),
 	}
+}
+
+func buildTeamStatsLocked() ([]int, []TeamStats) {
+	roundCount := game.Round.Number - 1
+	maxRound := roundCount
+	for _, h := range game.History {
+		if h.Round > maxRound {
+			maxRound = h.Round
+		}
+	}
+
+	if maxRound < 0 {
+		maxRound = 0
+	}
+
+	rounds := make([]int, 0, maxRound)
+	for i := 1; i <= maxRound; i++ {
+		rounds = append(rounds, i)
+	}
+
+	teamNames := map[string]string{}
+	for id, t := range game.Teams {
+		teamNames[id] = t.Name
+	}
+	for _, h := range game.History {
+		if _, ok := teamNames[h.TeamID]; !ok {
+			teamNames[h.TeamID] = h.TeamName
+		}
+	}
+
+	if len(teamNames) == 0 {
+		return rounds, nil
+	}
+
+	type teamRoundResult struct {
+		sentAt time.Time
+		status string
+	}
+
+	results := map[string]map[int]teamRoundResult{}
+	scores := map[string]int{}
+
+	for _, h := range game.History {
+		status := "wrong"
+		if h.Correct == "" {
+			status = "pending"
+		} else if h.IsRight {
+			status = "right"
+		}
+
+		byRound, ok := results[h.TeamID]
+		if !ok {
+			byRound = map[int]teamRoundResult{}
+			results[h.TeamID] = byRound
+		}
+
+		prev, exists := byRound[h.Round]
+		if !exists || h.SentAt.After(prev.sentAt) {
+			byRound[h.Round] = teamRoundResult{
+				sentAt: h.SentAt,
+				status: status,
+			}
+		}
+
+		if h.IsRight {
+			scores[h.TeamID]++
+		}
+	}
+
+	stats := make([]TeamStats, 0, len(teamNames))
+	for teamID, teamName := range teamNames {
+		row := make([]string, len(rounds))
+		for i := range row {
+			row[i] = "noanswer"
+		}
+
+		for i, roundNo := range rounds {
+			if byRound, ok := results[teamID]; ok {
+				if rr, ok := byRound[roundNo]; ok {
+					row[i] = rr.status
+				}
+			}
+		}
+
+		stats = append(stats, TeamStats{
+			TeamID:       teamID,
+			TeamName:     teamName,
+			TotalScore:   scores[teamID],
+			RoundResults: row,
+		})
+	}
+
+	sort.Slice(stats, func(i, j int) bool {
+		return strings.ToLower(stats[i].TeamName) < strings.ToLower(stats[j].TeamName)
+	})
+
+	return rounds, stats
 }
 
 func formatMMSS(totalSec int) string {
@@ -230,6 +341,16 @@ func rebuildRoundHistoryLocked() {
 			Correct:  game.Round.Correct,
 			IsRight:  game.Round.Correct != "" && a.Choice == game.Round.Correct,
 		})
+	}
+	game.History = filtered
+}
+
+func removeRoundHistoryLocked(roundNo int) {
+	filtered := make([]HistoryRow, 0, len(game.History))
+	for _, h := range game.History {
+		if h.Round != roundNo {
+			filtered = append(filtered, h)
+		}
 	}
 	game.History = filtered
 }

@@ -196,10 +196,14 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func openRoundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
 	var req struct {
 		DurationSec  int  `json:"durationSec"`
 		AllowChange  bool `json:"allowChange"`
-		HideAnswers  bool `json:"hideAnswers"`
 		ShowScreenQR bool `json:"showScreenQR"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
@@ -207,13 +211,18 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if game.Round.Open || game.Round.AcceptLate {
+		http.Error(w, "round is not finished", 409)
+		return
+	}
+
 	now := time.Now()
 	game.Answers = map[string]*Answer{}
 	game.Round.Open = true
 	game.Round.AcceptLate = false
 	game.Round.OpenedAt = &now
 	game.Round.AllowChange = req.AllowChange
-	game.Round.HideAnswers = req.HideAnswers
+	game.Round.HideAnswers = true
 	game.Round.ShowScreenQR = req.ShowScreenQR
 	game.Round.Correct = ""
 	game.Round.Revealed = false
@@ -328,6 +337,11 @@ func closeRoundHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func revealHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
 	var req struct {
 		Correct string `json:"correct"`
 	}
@@ -345,6 +359,11 @@ func revealHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if !game.Round.Open && game.Round.Revealed {
+		http.Error(w, "round already revealed; use replay round", 409)
+		return
+	}
+
 	game.Round.Correct = req.Correct
 	game.Round.Revealed = req.Correct != ""
 
@@ -359,7 +378,34 @@ func revealHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func replayRoundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	game.Answers = map[string]*Answer{}
+	game.Round.Open = false
+	game.Round.AcceptLate = false
+	game.Round.OpenedAt = nil
+	game.Round.ClosesAt = nil
+	game.Round.Correct = ""
+	game.Round.Revealed = false
+	removeRoundHistoryLocked(game.Round.Number)
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 func resetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
 	var req struct {
 		Full bool `json:"full"`
 	}
@@ -377,10 +423,22 @@ func resetHandler(w http.ResponseWriter, r *http.Request) {
 	game.Round.Revealed = false
 
 	if req.Full {
-		game.Teams = map[string]*Team{}
-		game.History = nil
+		csvPath, err := exportStatsCSVLocked()
+		if err != nil {
+			http.Error(w, "failed to export csv: "+err.Error(), 500)
+			return
+		}
+
+		game.History = []HistoryRow{}
 		game.Round.Number = 1
+		broadcastLocked()
+		writeJSON(w, map[string]any{"ok": true, "csvPath": csvPath})
+		return
 	} else {
+		if game.Round.Open || game.Round.AcceptLate {
+			http.Error(w, "round is not finished", 409)
+			return
+		}
 		game.Round.Number++
 	}
 
