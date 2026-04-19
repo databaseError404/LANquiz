@@ -18,7 +18,7 @@ func manifestHandler(w http.ResponseWriter, r *http.Request) {
 func serviceWorkerHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	_, _ = w.Write([]byte(`
-const CACHE_NAME = 'lan-quiz-v1';
+const CACHE_NAME = 'lan-quiz-v2';
 const URLS = ['/', '/host', '/screen', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => {
@@ -27,9 +27,18 @@ self.addEventListener('install', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then(resp => resp || fetch(event.request))
-  );
+
+  // Для HTML-страниц всегда пробуем сеть первой,
+  // чтобы не показывать устаревшую версию после запуска.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Для остальных GET оставляем cache-first.
+  event.respondWith(caches.match(event.request).then(resp => resp || fetch(event.request)));
 });
 `))
 }

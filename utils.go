@@ -18,6 +18,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func writeHTML(w http.ResponseWriter, html string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	_, _ = w.Write([]byte(html))
 }
 

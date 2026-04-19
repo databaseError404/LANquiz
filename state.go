@@ -312,13 +312,14 @@ func broadcastLocked() {
 }
 
 func closeRoundLocked() {
-	if !game.Round.Open {
+	if !game.Round.Open && !game.Round.AcceptLate {
 		return
 	}
 
 	game.Round.Open = false
 	game.Round.AcceptLate = false
 	game.Round.ClosesAt = nil
+	game.Round.OpenedAt = nil
 	rebuildRoundHistoryLocked()
 	broadcastLocked()
 }

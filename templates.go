@@ -776,7 +776,6 @@ th,td{
             <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
             <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
           </div>
-          <div id="currentCorrectLabel" class="small" style="margin-top:8px">Текущий правильный ответ: —</div>
         </div>
 
         <div class="row" style="margin-top:10px">
@@ -1042,7 +1041,6 @@ function render(){
   $('correctBox').textContent=(state.round.revealed && state.round.correct)
     ? 'Правильный ответ: '+state.round.correct
     : '';
-  $('currentCorrectLabel').textContent='Текущий правильный ответ: ' + (state.round.correct || '—');
   $('allowChange').checked=!!state.round.allowChange;
   $('showScreenQR').checked=!!state.round.showScreenQR;
 
@@ -1370,13 +1368,13 @@ function playerURLForShare(){
   const origin=window.location.origin;
   if(!state || !Array.isArray(state.ipHints)) return origin + '/';
 
-  if(!isLoopbackHost()) return origin + '/';
-
   if(state.round && state.round.lanIP && state.ipHints.includes(state.round.lanIP)){
     const proto=window.location.protocol;
     const port=window.location.port ? (':'+window.location.port) : '';
     return proto+'//'+state.round.lanIP+port+'/';
   }
+
+  if(!isLoopbackHost()) return origin + '/';
 
   if(state.ipHints.length>0){
     const proto=window.location.protocol;
