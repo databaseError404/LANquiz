@@ -45,6 +45,7 @@ func main() {
 	http.HandleFunc("/api/host/reveal", hostOnly(revealHandler))
 	http.HandleFunc("/api/host/replay-round", hostOnly(replayRoundHandler))
 	http.HandleFunc("/api/host/screen-qr", hostOnly(setScreenQRHandler))
+	http.HandleFunc("/api/host/team/rename", hostOnly(renameTeamHandler))
 	http.HandleFunc("/api/host/team/remove", hostOnly(removeTeamHandler))
 
 	http.HandleFunc("/manifest.webmanifest", manifestHandler)

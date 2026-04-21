@@ -358,6 +358,14 @@ function render(){
     resetToJoinBecauseRemoved();
     return;
   }
+
+  if(me && me.name && String(me.name)!==String(teamName||'')){
+    teamName=String(me.name);
+    localStorage.setItem(teamNameKey, teamName);
+    $('teamLabel').textContent=teamName;
+    $('teamName').value=teamName;
+  }
+
   const myAns=(me && me.choice) || '—';
   $('myAnswerLabel').textContent=myAns;
   const myAnswerBox=$('myAnswerBox');
@@ -1078,6 +1086,16 @@ function render(){
       '<td></td>';
 
     const actionCell=tr.lastElementChild;
+    const renameBtn=document.createElement('button');
+    renameBtn.textContent='Переименовать';
+    renameBtn.style.background='#234566';
+    renameBtn.style.color='#fff';
+    renameBtn.style.padding='8px 10px';
+    renameBtn.style.fontSize='14px';
+    renameBtn.style.marginRight='8px';
+    renameBtn.onclick=()=>renameTeam(t.id, t.name);
+    actionCell.appendChild(renameBtn);
+
     const removeBtn=document.createElement('button');
     removeBtn.textContent='Удалить';
     removeBtn.style.background='#5a1f2d';
@@ -1255,6 +1273,22 @@ async function removeTeam(teamId, teamName){
     await api('/api/host/team/remove','POST',{teamId});
   }catch(e){
     alert('Ошибка удаления команды: ' + (e.message || e));
+  }
+}
+
+async function renameTeam(teamId, currentName){
+  if(!teamId) return;
+  const newName=prompt('Новое название команды:', String(currentName||''));
+  if(newName===null) return;
+  const teamName=String(newName).trim();
+  if(!teamName){
+    alert('Название команды не может быть пустым');
+    return;
+  }
+  try{
+    await api('/api/host/team/rename','POST',{teamId,teamName});
+  }catch(e){
+    alert('Ошибка переименования команды: ' + (e.message || e));
   }
 }
 

@@ -294,6 +294,55 @@ func setScreenQRHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func renameTeamHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		TeamID   string `json:"teamId"`
+		TeamName string `json:"teamName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	req.TeamName = strings.TrimSpace(req.TeamName)
+	if req.TeamID == "" {
+		http.Error(w, "empty team id", 400)
+		return
+	}
+	if req.TeamName == "" {
+		http.Error(w, "empty team name", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	t, ok := game.Teams[req.TeamID]
+	if !ok {
+		http.Error(w, "unknown team", 404)
+		return
+	}
+
+	t.Name = req.TeamName
+	if ans, ok := game.Answers[req.TeamID]; ok {
+		ans.TeamName = req.TeamName
+	}
+	for i := range game.History {
+		if game.History[i].TeamID == req.TeamID {
+			game.History[i].TeamName = req.TeamName
+		}
+	}
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true, "teamId": t.ID, "name": t.Name})
+}
+
 func removeTeamHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
