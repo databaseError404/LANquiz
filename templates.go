@@ -66,12 +66,16 @@ button{
   color:#fff;
 }
 .answer.active{
-  outline:3px solid #4fd18b;
-  background:#16322b;
+  outline:3px solid #4f8dff;
+  background:#1a2f5f;
 }
 .answer.correct{
   outline:3px solid #4fd18b;
   background:#16322b;
+}
+.answer.revealed{
+  outline:3px solid #9ca3af;
+  background:#374151;
 }
 .answer.wrong{
   outline:3px solid #ff6b6b;
@@ -104,6 +108,12 @@ button{
 }
 .small{
   font-size:12px;
+}
+.hintText{
+  display:block;
+  margin-top:3px;
+  font-size:11px;
+  color:#97a0b8;
 }
 .myAnswerRight{
   background:#123322;
@@ -145,6 +155,10 @@ button{
       <div class="row">
         <div class="box" style="flex:1">Команда: <b id="teamLabel">—</b></div>
         <div class="box" style="flex:1">Вопрос: <b id="roundLabel">—</b></div>
+      </div>
+
+      <div id="playerNonBurnRow" class="row hidden">
+        <div class="box" style="flex:1">Несгораемые суммы: <b id="playerSafeSums">—</b></div>
       </div>
 
       <div class="row">
@@ -372,6 +386,18 @@ function render(){
   const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
   const teamStats=Array.isArray(state.teamStats) ? state.teamStats : [];
   const myStats=teamStats.find(ts=>String(ts.teamId||'')===String(teamId||'')) || null;
+
+  const nonBurnEnabled=!!(state.round && state.round.nonBurnMode);
+  $('playerNonBurnRow').classList.toggle('hidden', !nonBurnEnabled);
+
+  if(nonBurnEnabled){
+    const sums=(myStats && Array.isArray(myStats.safeSums) && myStats.safeSums.length)
+      ? myStats.safeSums.join(', ')
+      : '—';
+    $('playerSafeSums').textContent=sums;
+  }else{
+    $('playerSafeSums').textContent='—';
+  }
   const idx=rounds.indexOf(roundNo);
   const currentResult=(myStats && idx>=0 && Array.isArray(myStats.roundResults)) ? (myStats.roundResults[idx]||'') : '';
 
@@ -414,12 +440,14 @@ function render(){
     btn.disabled=!can;
 
     const isMyChoice = myAns===btn.dataset.choice;
-    const showRevealColors = !state.round.open && !!state.round.revealed && !!state.round.correct && currentResult==='wrong';
+    const revealReady = !state.round.open && !!state.round.revealed && !!state.round.correct;
     const isCorrectChoice = state.round.correct===btn.dataset.choice;
+    const hasMyAnswer = !!myAns && myAns!=='—';
 
-    btn.classList.toggle('active', isMyChoice && !showRevealColors);
-    btn.classList.toggle('wrong', showRevealColors && isMyChoice);
-    btn.classList.toggle('correct', showRevealColors && isCorrectChoice);
+    btn.classList.toggle('active', isMyChoice && !revealReady);
+    btn.classList.toggle('wrong', revealReady && isMyChoice && !isCorrectChoice);
+    btn.classList.toggle('correct', revealReady && isCorrectChoice && hasMyAnswer);
+    btn.classList.toggle('revealed', revealReady && isCorrectChoice && !hasMyAnswer);
   });
 
   renderPlayerStats();
@@ -448,9 +476,12 @@ function renderPlayerStats(){
 
   const tr=document.createElement('tr');
   const results=Array.isArray(myStats.roundResults) ? myStats.roundResults : [];
+  const scoreCell=(state && state.round && state.round.nonBurnMode)
+    ? ('<b>'+Number(myStats.totalScore||0)+'</b><div class="small">след.: '+Number(myStats.nextScore||0)+'</div>')
+    : ('<b>'+Number(myStats.totalScore||0)+'</b>');
   tr.innerHTML='<td>Результат</td>' +
     rounds.map((_,i)=>'<td>'+playerStatusMark(results[i]||'noanswer')+'</td>').join('') +
-    '<td><b>'+Number(myStats.totalScore||0)+'</b></td>';
+    '<td>'+scoreCell+'</td>';
   body.appendChild(tr);
 }
 
@@ -532,12 +563,13 @@ body{
   padding:18px;
 }
 .wrap{
-  max-width:1200px;
-  margin:0 auto;
+  width:100%;
+  max-width:none;
+  margin:0;
 }
 .grid{
   display:grid;
-  grid-template-columns:380px 1fr;
+  grid-template-columns:max-content minmax(0, 1fr);
   gap:16px;
 }
 @media (max-width: 980px){
@@ -548,6 +580,10 @@ body{
   border-radius:20px;
   padding:18px;
   box-shadow:0 10px 30px rgba(0,0,0,.25);
+}
+.hostControlsCard{
+  width:max-content;
+  max-width:100%;
 }
 input,button{
   font-size:16px;
@@ -560,6 +596,9 @@ input{
   border:1px solid #2b3c6a;
   background:#0c1430;
   color:#fff;
+}
+#duration{
+  width:220px;
 }
 button{
   border:none;
@@ -605,6 +644,9 @@ th,td{
   border-radius:12px;
   background:#1c2542;
 }
+#hostStatus{
+  display:inline-block;
+}
 .qrBox{
   margin-top:16px;
 }
@@ -633,6 +675,13 @@ th,td{
 .small{
   font-size:12px;
   color:#aab7dd;
+}
+.teamSubHint{
+  display:block;
+  margin-top:3px;
+  font-size:11px;
+  color:#97a0b8;
+  font-weight:400;
 }
 .linkText{
   word-break:break-all;
@@ -663,10 +712,23 @@ th,td{
 }
 .roundGroup{
   background:#0d1b38;
+  width:max-content;
+  max-width:100%;
+}
+.roundGroup > .row,
+.roundGroup > details{
+  width:max-content;
+  max-width:100%;
 }
 .answerGroup{
   background:#2b1a3f;
   border-color:#6c4c99;
+  width:max-content;
+  max-width:100%;
+}
+.answerGroup .row{
+  flex-wrap:nowrap;
+  width:max-content;
 }
 .roundBtn{
   font-weight:800;
@@ -711,6 +773,9 @@ th,td{
 .statsTable th,
 .statsTable td{
   text-align:center;
+}
+.hostStatsTable th{
+  padding-right:16px;
 }
 .statsTable th:first-child,
 .statsTable td:first-child{
@@ -788,7 +853,7 @@ th,td{
 <body>
 <div class="wrap">
   <div class="grid">
-    <div class="card">
+    <div class="card hostControlsCard">
       <details class="detailsBlock">
         <summary>Сетевые ссылки и QR</summary>
         <div>IP в локальной сети: <span id="lanIps" class="linkText">—</span></div>
@@ -827,6 +892,9 @@ th,td{
       <div class="row checkRow" style="margin-top:10px">
         <label><input id="allowChange" type="checkbox" checked> Можно менять ответ</label>
       </div>
+      <div class="row checkRow" style="margin-top:10px">
+        <label><input id="nonBurnMode" type="checkbox" onchange="setNonBurnMode()"> Раунд с несгораемыми суммами</label>
+      </div>
       <div class="controlGroup roundGroup">
         <h3>Управление вопросом</h3>
         <div class="controlGroup answerGroup" style="margin-top:0">
@@ -843,10 +911,13 @@ th,td{
           <button id="nextRoundBtn" class="roundBtn next" onclick="nextRound()">Следующий вопрос</button>
         </div>
         <div class="row" style="margin-top:10px">
-          <button class="roundBtn close" onclick="closeRound()">Завершить</button>
+          <button class="roundBtn close" onclick="stopRound()">Остановить</button>
         </div>
         <div class="row" style="margin-top:10px">
           <button id="acceptLateBtn" class="roundBtn close" onclick="acceptLateAnswers()" disabled>Принять оставшиеся ответы</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="roundBtn close" onclick="closeRound()">Завершить</button>
         </div>
 
         <details class="detailsBlock" style="margin-top:10px">
@@ -1110,6 +1181,7 @@ function render(){
     $('correctBox').textContent='';
   }
   $('allowChange').checked=!!state.round.allowChange;
+  $('nonBurnMode').checked=!!state.round.nonBurnMode;
   $('showScreenQR').checked=!!state.round.showScreenQR;
 
   const base=shareBaseURL();
@@ -1146,14 +1218,14 @@ function renderStats(){
   const statsByTeamId=new Map(teamStats.map(ts=>[String(ts.teamId||''), ts]));
 
   const trHead=document.createElement('tr');
-  trHead.innerHTML='<th>Действие</th><th>Команда</th><th>Ответ</th><th>Время</th>' +
+  trHead.innerHTML='<th>Действие</th><th>Команда</th><th>Ответ</th>' +
     rounds.map(r=>'<th>'+r+'</th>').join('') +
-    '<th>Счёт</th>';
+    '<th>'+(state && state.round && state.round.nonBurnMode ? 'Счёт / След.' : 'Счёт')+'</th>';
   head.appendChild(trHead);
 
   if(teamsSorted.length===0){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="'+(rounds.length+7)+'">Нет команд</td>';
+    tr.innerHTML='<td colspan="'+(rounds.length+6)+'">Нет команд</td>';
     body.appendChild(tr);
     return;
   }
@@ -1162,10 +1234,14 @@ function renderStats(){
     const ts=statsByTeamId.get(String(t.id||'')) || null;
     const tr=document.createElement('tr');
     const teamColor=t.online ? '#4ade80' : '#9ca3af';
+    const safeHint=(state && state.round && state.round.nonBurnMode)
+      ? ((ts && Array.isArray(ts.safeSums) && ts.safeSums.length)
+          ? ('<span class="teamSubHint">несгораемые: '+escapeHtml(ts.safeSums.join(', '))+'</span>')
+          : '<span class="teamSubHint">несгораемые: —</span>')
+      : '';
     tr.innerHTML=
-      '<td><span style="color:'+teamColor+'">'+escapeHtml(t.name||'—')+'</span></td>'+
-      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>'+
-      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>';
+      '<td><span style="color:'+teamColor+'">'+escapeHtml(t.name||'—')+'</span>'+safeHint+'</td>'+
+      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>';
 
     const results=ts && Array.isArray(ts.roundResults) ? ts.roundResults : [];
     for(let i=0;i<rounds.length;i++){
@@ -1177,7 +1253,13 @@ function renderStats(){
     }
 
     const scoreTd=document.createElement('td');
-    scoreTd.innerHTML='<b>'+Number(ts ? ts.totalScore : 0)+'</b>';
+    if(state && state.round && state.round.nonBurnMode){
+      const current=Number(ts ? ts.totalScore : 0);
+      const next=Number(ts ? ts.nextScore : 0);
+      scoreTd.innerHTML='<b>'+current+'</b><div class="small">след.: '+next+'</div>';
+    }else{
+      scoreTd.innerHTML='<b>'+Number(ts ? ts.totalScore : 0)+'</b>';
+    }
     tr.appendChild(scoreTd);
 
     const actionTd=document.createElement('td');
@@ -1200,6 +1282,14 @@ function renderStats(){
     removeBtn.textContent='Удалить';
     removeBtn.onclick=()=>removeTeam(t.id, t.name);
     panel.appendChild(removeBtn);
+
+    if(state && state.round && state.round.nonBurnMode){
+      const safeSumsBtn=document.createElement('button');
+      safeSumsBtn.className='actionMenuBtn rename';
+      safeSumsBtn.textContent='Несгораемые суммы';
+      safeSumsBtn.onclick=()=>editSafeSums(t);
+      panel.appendChild(safeSumsBtn);
+    }
 
     tr.insertBefore(actionTd, tr.firstChild);
 
@@ -1246,9 +1336,45 @@ async function setScreenQRVisible(){
   }
 }
 
+async function setNonBurnMode(){
+  try{
+    await api('/api/host/non-burn-mode','POST',{
+      enabled:$('nonBurnMode').checked
+    });
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function editSafeSums(team){
+  if(!team || !team.id) return;
+  const current=Array.isArray(team.safeSums) ? team.safeSums.join(', ') : '';
+  const raw=prompt('До 3 несгораемых сумм через запятую (из таблицы: 100,200,300,500,700,1000,2000,3000,5000,10000,15000,20000,30000)', current);
+  if(raw===null) return;
+
+  const safeSums=String(raw)
+    .split(',')
+    .map(s=>parseInt(String(s).trim(),10))
+    .filter(n=>Number.isFinite(n) && n>0);
+
+  try{
+    await api('/api/host/team/safe-sums','POST',{teamId:team.id,safeSums});
+  }catch(e){
+    alert('Ошибка сохранения несгораемых сумм: ' + (e.message || e));
+  }
+}
+
 async function closeRound(){
   try{
     await api('/api/host/close','POST',{});
+  }catch(e){
+    alert('Ошибка: ' + (e.message || e));
+  }
+}
+
+async function stopRound(){
+  try{
+    await api('/api/host/stop','POST',{});
   }catch(e){
     alert('Ошибка: ' + (e.message || e));
   }

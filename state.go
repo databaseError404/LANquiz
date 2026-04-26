@@ -16,6 +16,7 @@ type Team struct {
 	Online   bool      `json:"online"`
 	LastSeen time.Time `json:"lastSeen"`
 	JoinedAt time.Time `json:"joinedAt"`
+	SafeSums []int     `json:"safeSums,omitempty"`
 }
 
 type Answer struct {
@@ -34,6 +35,7 @@ type RoundState struct {
 	AllowChange  bool       `json:"allowChange"`
 	HideAnswers  bool       `json:"hideAnswers"`
 	ShowScreenQR bool       `json:"showScreenQR"`
+	NonBurnMode  bool       `json:"nonBurnMode"`
 	LanIP        string     `json:"lanIP,omitempty"`
 	Correct      string     `json:"correct,omitempty"`
 	Revealed     bool       `json:"revealed"`
@@ -56,6 +58,7 @@ type PublicTeam struct {
 	Answered   bool   `json:"answered"`
 	Choice     string `json:"choice,omitempty"`
 	AnsweredAt string `json:"answeredAt,omitempty"`
+	SafeSums   []int  `json:"safeSums,omitempty"`
 }
 
 type PublicState struct {
@@ -74,8 +77,12 @@ type TeamStats struct {
 	TeamID       string   `json:"teamId"`
 	TeamName     string   `json:"teamName"`
 	TotalScore   int      `json:"totalScore"`
+	NextScore    int      `json:"nextScore,omitempty"`
+	SafeSums     []int    `json:"safeSums,omitempty"`
 	RoundResults []string `json:"roundResults"`
 }
+
+var scoreProgression = []int{0, 100, 200, 300, 500, 700, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000}
 
 type PersistedState struct {
 	Title   string             `json:"title"`
@@ -148,6 +155,9 @@ func publicStateLocked(isHost bool) PublicState {
 			ID:     t.ID,
 			Name:   t.Name,
 			Online: t.Online,
+		}
+		if isHost && len(t.SafeSums) > 0 {
+			pt.SafeSums = append([]int(nil), t.SafeSums...)
 		}
 		if a, ok := game.Answers[t.ID]; ok {
 			pt.Answered = true
@@ -224,12 +234,12 @@ func buildTeamStatsLocked() ([]int, []TeamStats) {
 	}
 
 	type teamRoundResult struct {
-		sentAt time.Time
-		status string
+		sentAt  time.Time
+		status  string
+		isRight bool
 	}
 
 	results := map[string]map[int]teamRoundResult{}
-	scores := map[string]int{}
 
 	for _, h := range game.History {
 		status := "wrong"
@@ -248,13 +258,10 @@ func buildTeamStatsLocked() ([]int, []TeamStats) {
 		prev, exists := byRound[h.Round]
 		if !exists || h.SentAt.After(prev.sentAt) {
 			byRound[h.Round] = teamRoundResult{
-				sentAt: h.SentAt,
-				status: status,
+				sentAt:  h.SentAt,
+				status:  status,
+				isRight: h.IsRight,
 			}
-		}
-
-		if h.IsRight {
-			scores[h.TeamID]++
 		}
 	}
 
@@ -265,18 +272,40 @@ func buildTeamStatsLocked() ([]int, []TeamStats) {
 			row[i] = "noanswer"
 		}
 
+		score := 0
 		for i, roundNo := range rounds {
 			if byRound, ok := results[teamID]; ok {
 				if rr, ok := byRound[roundNo]; ok {
 					row[i] = rr.status
+					if game.Round.NonBurnMode {
+						if rr.isRight {
+							score = nextScoreByProgression(score)
+						} else if rr.status == "wrong" {
+							score = fallbackSafeScore(score, game.Teams[teamID])
+						}
+					} else if rr.isRight {
+						score++
+					}
 				}
 			}
+		}
+
+		nextScore := score + 1
+		if game.Round.NonBurnMode {
+			nextScore = nextScoreByProgression(score)
+		}
+
+		safeSums := []int(nil)
+		if t, ok := game.Teams[teamID]; ok && t != nil && len(t.SafeSums) > 0 {
+			safeSums = append([]int(nil), t.SafeSums...)
 		}
 
 		stats = append(stats, TeamStats{
 			TeamID:       teamID,
 			TeamName:     teamName,
-			TotalScore:   scores[teamID],
+			TotalScore:   score,
+			NextScore:    nextScore,
+			SafeSums:     safeSums,
 			RoundResults: row,
 		})
 	}
@@ -286,6 +315,54 @@ func buildTeamStatsLocked() ([]int, []TeamStats) {
 	})
 
 	return rounds, stats
+}
+
+func nextScoreByProgression(current int) int {
+	for _, v := range scoreProgression {
+		if v > current {
+			return v
+		}
+	}
+	return current
+}
+
+func fallbackSafeScore(current int, t *Team) int {
+	if t == nil || len(t.SafeSums) == 0 {
+		return 0
+	}
+	best := 0
+	for _, s := range t.SafeSums {
+		if s <= current && s > best {
+			best = s
+		}
+	}
+	return best
+}
+
+func normalizeSafeSums(vals []int) []int {
+	allowed := map[int]struct{}{}
+	for _, v := range scoreProgression {
+		if v > 0 {
+			allowed[v] = struct{}{}
+		}
+	}
+	uniq := map[int]struct{}{}
+	out := make([]int, 0, 3)
+	for _, v := range vals {
+		if _, ok := allowed[v]; !ok {
+			continue
+		}
+		if _, exists := uniq[v]; exists {
+			continue
+		}
+		uniq[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Ints(out)
+	if len(out) > 3 {
+		out = out[:3]
+	}
+	return out
 }
 
 func formatMMSS(totalSec int) string {

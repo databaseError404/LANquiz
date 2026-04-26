@@ -294,6 +294,63 @@ func setScreenQRHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func setNonBurnModeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	game.Round.NonBurnMode = req.Enabled
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func setTeamSafeSumsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		TeamID   string `json:"teamId"`
+		SafeSums []int  `json:"safeSums"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	if req.TeamID == "" {
+		http.Error(w, "empty team id", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	t, ok := game.Teams[req.TeamID]
+	if !ok {
+		http.Error(w, "unknown team", 404)
+		return
+	}
+
+	t.SafeSums = normalizeSafeSums(req.SafeSums)
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true, "teamId": t.ID, "safeSums": t.SafeSums})
+}
+
 func renameTeamHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)
@@ -387,8 +444,49 @@ func removeTeamHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func closeRoundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
+
+	// Если вопрос уже остановлен (прием ответов прекращен),
+	// по кнопке "Завершить" нужно сразу раскрыть правильный ответ игрокам.
+	if !game.Round.Open && !game.Round.AcceptLate {
+		if game.Round.Correct != "" && !game.Round.Revealed {
+			game.Round.Revealed = true
+			for i := range game.History {
+				if game.History[i].Round == game.Round.Number {
+					game.History[i].Correct = game.Round.Correct
+					game.History[i].IsRight = game.Round.Correct != "" && game.History[i].Choice == game.Round.Correct
+				}
+			}
+			broadcastLocked()
+		}
+		writeJSON(w, map[string]any{"ok": true})
+		return
+	}
+
+	// "Завершить" — закрыть вопрос и открыть правильный ответ игрокам.
+	if game.Round.Correct != "" {
+		game.Round.Revealed = true
+	}
+	closeRoundLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func stopRoundHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// "Остановить" — только прекратить приём ответов, без показа правильного ответа.
 	closeRoundLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -422,7 +520,7 @@ func revealHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	game.Round.Correct = req.Correct
-	game.Round.Revealed = req.Correct != ""
+	game.Round.Revealed = false
 
 	for i := range game.History {
 		if game.History[i].Round == game.Round.Number {
