@@ -133,8 +133,8 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Choice = strings.ToUpper(strings.TrimSpace(req.Choice))
-	if req.Choice != "A" && req.Choice != "B" && req.Choice != "C" && req.Choice != "D" {
-		http.Error(w, "choice must be A/B/C/D", 400)
+	if req.Choice != "А" && req.Choice != "Б" && req.Choice != "В" && req.Choice != "Г" {
+		http.Error(w, "choice must be А/Б/В/Г", 400)
 		return
 	}
 
@@ -247,7 +247,7 @@ func acceptLateAnswersHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Принимать оставшиеся ответы можно только после завершения раунда
+	// Принимать оставшиеся ответы можно только после завершения вопроса
 	// и только если ответили не все команды.
 	if game.Round.Open {
 		http.Error(w, "round is still open", 409)
@@ -374,6 +374,14 @@ func removeTeamHandler(w http.ResponseWriter, r *http.Request) {
 	delete(game.Teams, req.TeamID)
 	delete(game.Answers, req.TeamID)
 
+	filtered := make([]HistoryRow, 0, len(game.History))
+	for _, h := range game.History {
+		if h.TeamID != req.TeamID {
+			filtered = append(filtered, h)
+		}
+	}
+	game.History = filtered
+
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -400,8 +408,8 @@ func revealHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Correct = strings.ToUpper(strings.TrimSpace(req.Correct))
-	if req.Correct != "" && req.Correct != "A" && req.Correct != "B" && req.Correct != "C" && req.Correct != "D" {
-		http.Error(w, "correct must be A/B/C/D", 400)
+	if req.Correct != "" && req.Correct != "А" && req.Correct != "Б" && req.Correct != "В" && req.Correct != "Г" {
+		http.Error(w, "correct must be А/Б/В/Г", 400)
 		return
 	}
 

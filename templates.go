@@ -132,8 +132,6 @@ button{
 <body>
 <div class="wrap">
   <div class="card">
-    <h1 id="title">LAN Quiz</h1>
-
     <div id="joinBox">
       <input id="teamName" placeholder="Название команды">
       <div class="row" style="margin-top:12px">
@@ -146,7 +144,7 @@ button{
 
       <div class="row">
         <div class="box" style="flex:1">Команда: <b id="teamLabel">—</b></div>
-        <div class="box" style="flex:1">Раунд: <b id="roundLabel">—</b></div>
+        <div class="box" style="flex:1">Вопрос: <b id="roundLabel">—</b></div>
       </div>
 
       <div class="row">
@@ -155,13 +153,13 @@ button{
       </div>
 
       <div class="answers">
-        <button class="answer" data-choice="A">A</button>
-        <button class="answer" data-choice="B">B</button>
-        <button class="answer" data-choice="C">C</button>
-        <button class="answer" data-choice="D">D</button>
+        <button class="answer" data-choice="А">А</button>
+        <button class="answer" data-choice="Б">Б</button>
+        <button class="answer" data-choice="В">В</button>
+        <button class="answer" data-choice="Г">Г</button>
       </div>
 
-      <div class="playerStatsTitle">Ваша статистика по раундам</div>
+      <div class="playerStatsTitle">Ваша статистика по вопросам</div>
       <table class="playerStatsTable">
         <thead id="playerStatsHead"></thead>
         <tbody id="playerStatsBody"></tbody>
@@ -350,7 +348,6 @@ function resetToJoinBecauseRemoved(){
 function render(){
   if(!state) return;
 
-  $('title').textContent=state.title || 'LAN Quiz';
   $('roundLabel').textContent=state.round ? state.round.number : '—';
 
   const me=myTeam();
@@ -388,25 +385,25 @@ function render(){
     if(state.round.revealed && state.round.correct){
       if(currentResult==='right'){
         myAnswerBox.classList.add('myAnswerRight');
-        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: верно.', 'ok');
+        setStatus('Вопрос закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: верно.', 'ok');
       }else if(currentResult==='wrong'){
         myAnswerBox.classList.add('myAnswerWrong');
-        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: неверно.', 'bad');
+        setStatus('Вопрос закрыт. Правильный ответ: ' + state.round.correct + '. Ваш ответ: неверно.', 'bad');
       }else{
-        setStatus('Раунд закрыт. Правильный ответ: ' + state.round.correct, 'ok');
+        setStatus('Вопрос закрыт. Правильный ответ: ' + state.round.correct, 'ok');
       }
     }else{
-      setStatus('Раунд закрыт. Ждите следующий вопрос.', 'warn');
+      setStatus('Вопрос закрыт. Ждите следующий вопрос.', 'warn');
     }
   }else{
     if(me && me.answered){
       if(state.round.allowChange){
-        setStatus('Ответ принят. Можно изменить до конца раунда.', 'ok');
+        setStatus('Ответ принят. Можно изменить до конца вопроса.', 'ok');
       }else{
         setStatus('Ответ принят.', 'ok');
       }
     }else{
-      setStatus('Раунд открыт. Выберите ответ.', 'ok');
+      setStatus('Вопрос открыт. Выберите ответ.', 'ok');
     }
   }
 
@@ -439,7 +436,7 @@ function renderPlayerStats(){
   const myStats=teamStats.find(ts=>String(ts.teamId||'')===String(teamId||'')) || null;
 
   const trHead=document.createElement('tr');
-  trHead.innerHTML='<th>Раунды</th>' + rounds.map(r=>'<th>'+r+'</th>').join('') + '<th>Счёт</th>';
+  trHead.innerHTML='<th>Вопросы</th>' + rounds.map(r=>'<th>'+r+'</th>').join('') + '<th>Счёт</th>';
   head.appendChild(trHead);
 
   if(!myStats){
@@ -719,6 +716,64 @@ th,td{
 .statsTable td:first-child{
   text-align:left;
 }
+.hostStatsTable th:first-child,
+.hostStatsTable td:first-child{
+  width:56px;
+  min-width:56px;
+  max-width:56px;
+  text-align:center;
+}
+.hostStatsTable th:nth-child(2),
+.hostStatsTable td:nth-child(2){
+  width:1%;
+  white-space:nowrap;
+  text-align:left;
+}
+.actionMenu{
+  position:relative;
+  display:inline-block;
+}
+.actionMenu summary{
+  list-style:none;
+  cursor:pointer;
+  user-select:none;
+  font-size:20px;
+  line-height:1;
+  padding:4px 8px;
+  border-radius:8px;
+  background:#1f2d57;
+  color:#fff;
+  border:1px solid #4a5f9b;
+}
+.actionMenu summary::-webkit-details-marker{
+  display:none;
+}
+.actionMenuPanel{
+  position:absolute;
+  left:0;
+  top:calc(100% + 6px);
+  z-index:5;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  min-width:140px;
+  padding:8px;
+  border-radius:10px;
+  border:1px solid #2f4270;
+  background:#0f1730;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+}
+.actionMenuBtn{
+  color:#fff;
+  padding:8px 10px;
+  font-size:13px;
+}
+.actionMenuBtn.rename{
+  background:#234566;
+}
+.actionMenuBtn.remove{
+  background:#5a1f2d;
+}
 .statsCell.right{
   background:#123322;
 }
@@ -732,8 +787,6 @@ th,td{
 </head>
 <body>
 <div class="wrap">
-  <h1 id="title">LAN Quiz</h1>
-
   <div class="grid">
     <div class="card">
       <details class="detailsBlock">
@@ -769,25 +822,25 @@ th,td{
       </div>
 
       <div style="margin-top:14px">Длительность (сек)</div>
-      <input id="duration" type="number" value="30">
+      <input id="duration" type="number" value="60">
 
       <div class="row checkRow" style="margin-top:10px">
         <label><input id="allowChange" type="checkbox" checked> Можно менять ответ</label>
       </div>
       <div class="controlGroup roundGroup">
-        <h3>Управление раундом</h3>
+        <h3>Управление вопросом</h3>
         <div class="controlGroup answerGroup" style="margin-top:0">
           <h3>Правильный ответ</h3>
           <div class="row">
-            <button class="revealBtn" data-choice="A" onclick="reveal('A')">A</button>
-            <button class="revealBtn" data-choice="B" onclick="reveal('B')">B</button>
-            <button class="revealBtn" data-choice="C" onclick="reveal('C')">C</button>
-            <button class="revealBtn" data-choice="D" onclick="reveal('D')">D</button>
+            <button class="revealBtn" data-choice="А" onclick="reveal('А')">А</button>
+            <button class="revealBtn" data-choice="Б" onclick="reveal('Б')">Б</button>
+            <button class="revealBtn" data-choice="В" onclick="reveal('В')">В</button>
+            <button class="revealBtn" data-choice="Г" onclick="reveal('Г')">Г</button>
           </div>
         </div>
 
         <div class="row" style="margin-top:10px">
-          <button id="nextRoundBtn" class="roundBtn next" onclick="nextRound()">Следующий раунд</button>
+          <button id="nextRoundBtn" class="roundBtn next" onclick="nextRound()">Следующий вопрос</button>
         </div>
         <div class="row" style="margin-top:10px">
           <button class="roundBtn close" onclick="closeRound()">Завершить</button>
@@ -802,13 +855,13 @@ th,td{
             <button class="roundBtn open" onclick="openRound()">Начать</button>
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="roundBtn prev" onclick="prevRound()">Предыдущий раунд</button>
+            <button class="roundBtn prev" onclick="prevRound()">Предыдущий вопрос</button>
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="roundBtn close" onclick="replayRound()">Переиграть раунд</button>
+            <button class="roundBtn close" onclick="replayRound()">Переиграть вопрос</button>
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="roundBtn reset" onclick="fullReset()">Сброс статистики и раундов</button>
+            <button class="roundBtn reset" onclick="fullReset()">Сброс статистики и новый раунд</button>
           </div>
         </details>
       </div>
@@ -819,7 +872,7 @@ th,td{
 
     <div class="card">
       <div class="kpis">
-        <div class="kpi">Раунд<br><b id="roundNo">—</b></div>
+        <div class="kpi">Вопрос<br><b id="roundNo">—</b></div>
         <div class="kpi">Онлайн<br><b id="onlineCount">0</b></div>
         <div class="kpi">Ответили<br><b id="answeredCount">0</b></div>
         <div class="kpi">Таймер<br><b id="timer">—</b></div>
@@ -828,15 +881,8 @@ th,td{
       <div id="roundStatus" style="margin-top:10px">—</div>
       <div id="correctBox" style="margin-top:6px"></div>
 
-      <table style="margin-top:14px">
-        <thead>
-          <tr><th>Команда</th><th>Онлайн</th><th>Ответ</th><th>Время</th><th>Действие</th></tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-
-      <div class="statsTitle">Статистика по раундам</div>
-      <table class="statsTable">
+      <div class="statsTitle">Команды и статистика по вопросам</div>
+      <table class="statsTable hostStatsTable">
         <thead id="statsHead"></thead>
         <tbody id="statsBody"></tbody>
       </table>
@@ -1031,7 +1077,6 @@ function shareBaseURL(){
 function render(){
   if(!state) return;
 
-  $('title').textContent=state.title || 'LAN Quiz';
   $('roundNo').textContent=state.round.number;
   $('onlineCount').textContent=state.onlineCount;
   $('answeredCount').textContent=state.answeredCount;
@@ -1044,11 +1089,26 @@ function render(){
   if(state.round.acceptLate){
     $('roundStatus').textContent='Приём оставшихся ответов (без таймера)';
   }else{
-    $('roundStatus').textContent=state.round.open ? 'Раунд открыт' : 'Раунд закрыт';
+    $('roundStatus').textContent=state.round.open ? 'Вопрос открыт' : 'Вопрос закрыт';
   }
-  $('correctBox').textContent=(state.round.revealed && state.round.correct)
-    ? 'Правильный ответ: '+state.round.correct
-    : '';
+  if(state.round.revealed && state.round.correct){
+    const counts={ 'А':0, 'Б':0, 'В':0, 'Г':0 };
+    const teams=Array.isArray(state.teams) ? state.teams : [];
+    for(const t of teams){
+      const c=String((t && t.choice) || '').trim().toUpperCase();
+      if(Object.prototype.hasOwnProperty.call(counts, c)) counts[c]++;
+    }
+
+    const stats=Object.entries(counts)
+      .filter(([,n])=>n>0)
+      .sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0],'ru'))
+      .map(([choice,n])=>choice+': '+n)
+      .join(', ');
+
+    $('correctBox').textContent='Правильный ответ: '+state.round.correct + (stats ? (' | Ответы: '+stats) : '');
+  }else{
+    $('correctBox').textContent='';
+  }
   $('allowChange').checked=!!state.round.allowChange;
   $('showScreenQR').checked=!!state.round.showScreenQR;
 
@@ -1069,45 +1129,6 @@ function render(){
     btn.disabled = !state.round.open && !!state.round.revealed;
   });
 
-  const tbody=$('tbody');
-  tbody.innerHTML='';
-
-  const teamsSorted = Array.isArray(state.teams)
-    ? [...state.teams].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ru',{sensitivity:'base'}))
-    : [];
-
-  for(const t of teamsSorted){
-    const tr=document.createElement('tr');
-    tr.innerHTML=
-      '<td>'+escapeHtml(t.name)+'</td>'+
-      '<td>'+(t.online?'да':'нет')+'</td>'+
-      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>'+
-      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>'+
-      '<td></td>';
-
-    const actionCell=tr.lastElementChild;
-    const renameBtn=document.createElement('button');
-    renameBtn.textContent='Переименовать';
-    renameBtn.style.background='#234566';
-    renameBtn.style.color='#fff';
-    renameBtn.style.padding='8px 10px';
-    renameBtn.style.fontSize='14px';
-    renameBtn.style.marginRight='8px';
-    renameBtn.onclick=()=>renameTeam(t.id, t.name);
-    actionCell.appendChild(renameBtn);
-
-    const removeBtn=document.createElement('button');
-    removeBtn.textContent='Удалить';
-    removeBtn.style.background='#5a1f2d';
-    removeBtn.style.color='#fff';
-    removeBtn.style.padding='8px 10px';
-    removeBtn.style.fontSize='14px';
-    removeBtn.onclick=()=>removeTeam(t.id, t.name);
-    actionCell.appendChild(removeBtn);
-
-    tbody.appendChild(tr);
-  }
-
   renderStats();
 }
 
@@ -1118,28 +1139,35 @@ function renderStats(){
   body.innerHTML='';
 
   const rounds=Array.isArray(state.statsRounds) ? state.statsRounds : [];
-  const teamStats=Array.isArray(state.teamStats)
-    ? [...state.teamStats].sort((a,b)=>String(a.teamName||'').localeCompare(String(b.teamName||''),'ru',{sensitivity:'base'}))
+  const teamsSorted = Array.isArray(state.teams)
+    ? [...state.teams].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ru',{sensitivity:'base'}))
     : [];
+  const teamStats=Array.isArray(state.teamStats) ? state.teamStats : [];
+  const statsByTeamId=new Map(teamStats.map(ts=>[String(ts.teamId||''), ts]));
 
   const trHead=document.createElement('tr');
-  trHead.innerHTML='<th>Команда</th>' +
-    rounds.map(()=>'<th></th>').join('') +
+  trHead.innerHTML='<th>Действие</th><th>Команда</th><th>Ответ</th><th>Время</th>' +
+    rounds.map(r=>'<th>'+r+'</th>').join('') +
     '<th>Счёт</th>';
   head.appendChild(trHead);
 
-  if(teamStats.length===0){
+  if(teamsSorted.length===0){
     const tr=document.createElement('tr');
-    tr.innerHTML='<td colspan="'+(rounds.length+2)+'">Нет данных</td>';
+    tr.innerHTML='<td colspan="'+(rounds.length+7)+'">Нет команд</td>';
     body.appendChild(tr);
     return;
   }
 
-  for(const ts of teamStats){
+  for(const t of teamsSorted){
+    const ts=statsByTeamId.get(String(t.id||'')) || null;
     const tr=document.createElement('tr');
-    tr.innerHTML='<td>'+escapeHtml(ts.teamName||'—')+'</td>';
+    const teamColor=t.online ? '#4ade80' : '#9ca3af';
+    tr.innerHTML=
+      '<td><span style="color:'+teamColor+'">'+escapeHtml(t.name||'—')+'</span></td>'+
+      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>'+
+      '<td>'+(t.answeredAt?escapeHtml(t.answeredAt):'—')+'</td>';
 
-    const results=Array.isArray(ts.roundResults) ? ts.roundResults : [];
+    const results=ts && Array.isArray(ts.roundResults) ? ts.roundResults : [];
     for(let i=0;i<rounds.length;i++){
       const status=results[i] || 'noanswer';
       const td=document.createElement('td');
@@ -1149,8 +1177,31 @@ function renderStats(){
     }
 
     const scoreTd=document.createElement('td');
-    scoreTd.innerHTML='<b>'+Number(ts.totalScore||0)+'</b>';
+    scoreTd.innerHTML='<b>'+Number(ts ? ts.totalScore : 0)+'</b>';
     tr.appendChild(scoreTd);
+
+    const actionTd=document.createElement('td');
+    actionTd.innerHTML=''+
+      '<details class="actionMenu">'+
+        '<summary title="Действия">⋮</summary>'+
+        '<div class="actionMenuPanel"></div>'+
+      '</details>';
+
+    const panel=actionTd.querySelector('.actionMenuPanel');
+
+    const renameBtn=document.createElement('button');
+    renameBtn.className='actionMenuBtn rename';
+    renameBtn.textContent='Переименовать';
+    renameBtn.onclick=()=>renameTeam(t.id, t.name);
+    panel.appendChild(renameBtn);
+
+    const removeBtn=document.createElement('button');
+    removeBtn.className='actionMenuBtn remove';
+    removeBtn.textContent='Удалить';
+    removeBtn.onclick=()=>removeTeam(t.id, t.name);
+    panel.appendChild(removeBtn);
+
+    tr.insertBefore(actionTd, tr.firstChild);
 
     body.appendChild(tr);
   }
@@ -1228,7 +1279,7 @@ async function prevRound(){
 }
 
 async function fullReset(){
-  if(!confirm('Сбросить статистику, очистить историю и вернуть счётчик раундов к 1?')) return;
+  if(!confirm('Сбросить статистику, очистить историю и вернуть счётчик вопросов к 1?')) return;
   try{
     const res=await api('/api/host/reset','POST',{full:true});
     const csvPath=(res && res.csvPath) ? String(res.csvPath) : '';
@@ -1241,7 +1292,7 @@ async function fullReset(){
 async function reveal(c){
   try{
     if(state && state.round && !state.round.open && state.round.revealed){
-      alert('Раунд уже сыгран. Нажмите «Переиграть раунд», чтобы выбрать правильный ответ заново.');
+      alert('Вопрос уже сыгран. Нажмите «Переиграть вопрос», чтобы выбрать правильный ответ заново.');
       return;
     }
     if(state && state.round && !state.round.open){
@@ -1258,7 +1309,7 @@ async function reveal(c){
 }
 
 async function replayRound(){
-  if(!confirm('Переиграть текущий раунд? Ответы и проверка этого раунда будут очищены.')) return;
+  if(!confirm('Переиграть текущий вопрос? Ответы и проверка этого вопроса будут очищены.')) return;
   try{
     await api('/api/host/replay-round','POST',{});
   }catch(e){
@@ -1324,10 +1375,6 @@ body{
   color:#fff;
   padding:24px;
 }
-h1{
-  font-size:42px;
-  margin:0 0 12px;
-}
 .small{
   color:#aab7dd;
 }
@@ -1375,7 +1422,6 @@ h1{
 </style>
 </head>
 <body>
-<h1 id="title">LAN Quiz</h1>
 <div class="statsTitle">Статистика команд</div>
 <table class="statsTable">
   <thead id="screenStatsHead"></thead>
@@ -1437,8 +1483,6 @@ function escapeHtml(s){
 
 function render(){
   if(!state) return;
-
-  document.getElementById('title').textContent=state.title;
 
   renderScreenStats();
 

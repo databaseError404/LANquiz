@@ -63,7 +63,7 @@ func loadState() {
 	game.Round = ps.Round
 	game.History = ps.History
 
-	// После перезапуска сервера выбор правильного ответа текущего раунда
+	// После перезапуска сервера выбор правильного ответа текущего вопроса
 	// не переносим: новый запуск начинается без выбранного варианта.
 	game.Round.Correct = ""
 	game.Round.Revealed = false
@@ -111,7 +111,7 @@ func exportStatsCSVLocked() (string, error) {
 	rounds, stats := buildTeamStatsLocked()
 	header := []string{"Название команды", "Общий счёт"}
 	for _, r := range rounds {
-		header = append(header, fmt.Sprintf("Раунд %d", r))
+		header = append(header, fmt.Sprintf("Вопрос %d", r))
 	}
 	if err := w.Write(header); err != nil {
 		return "", err
