@@ -451,29 +451,7 @@ func closeRoundHandler(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	defer mu.Unlock()
-
-	// Если вопрос уже остановлен (прием ответов прекращен),
-	// по кнопке "Завершить" нужно сразу раскрыть правильный ответ игрокам.
-	if !game.Round.Open && !game.Round.AcceptLate {
-		if game.Round.Correct != "" && !game.Round.Revealed {
-			game.Round.Revealed = true
-			for i := range game.History {
-				if game.History[i].Round == game.Round.Number {
-					game.History[i].Correct = game.Round.Correct
-					game.History[i].IsRight = game.Round.Correct != "" && game.History[i].Choice == game.Round.Correct
-				}
-			}
-			broadcastLocked()
-		}
-		writeJSON(w, map[string]any{"ok": true})
-		return
-	}
-
-	// "Завершить" — закрыть вопрос и открыть правильный ответ игрокам.
-	if game.Round.Correct != "" {
-		game.Round.Revealed = true
-	}
-	closeRoundLocked()
+	applyFinishRoundLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -487,7 +465,7 @@ func stopRoundHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 
 	// "Остановить" — только прекратить приём ответов, без показа правильного ответа.
-	closeRoundLocked()
+	applyStopRoundLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
 

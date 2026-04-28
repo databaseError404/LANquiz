@@ -71,7 +71,12 @@ func autocloseLoop() {
 	for range ticker.C {
 		mu.Lock()
 		if game.Round.Open && game.Round.ClosesAt != nil && time.Now().After(*game.Round.ClosesAt) {
-			closeRoundLocked()
+			answeredAll := len(game.Teams) == 0 || len(game.Answers) >= len(game.Teams)
+			if answeredAll {
+				applyFinishRoundLocked()
+			} else {
+				applyStopRoundLocked()
+			}
 		}
 		mu.Unlock()
 	}

@@ -401,6 +401,31 @@ func closeRoundLocked() {
 	broadcastLocked()
 }
 
+func applyStopRoundLocked() {
+	closeRoundLocked()
+}
+
+func applyFinishRoundLocked() {
+	if !game.Round.Open && !game.Round.AcceptLate {
+		if game.Round.Correct != "" && !game.Round.Revealed {
+			game.Round.Revealed = true
+			for i := range game.History {
+				if game.History[i].Round == game.Round.Number {
+					game.History[i].Correct = game.Round.Correct
+					game.History[i].IsRight = game.Round.Correct != "" && game.History[i].Choice == game.Round.Correct
+				}
+			}
+			broadcastLocked()
+		}
+		return
+	}
+
+	if game.Round.Correct != "" {
+		game.Round.Revealed = true
+	}
+	closeRoundLocked()
+}
+
 func rebuildRoundHistoryLocked() {
 	filtered := make([]HistoryRow, 0, len(game.History))
 	for _, h := range game.History {
