@@ -362,6 +362,14 @@ function resetToJoinBecauseRemoved(){
 function render(){
   if(!state) return;
 
+  if($('duration')){
+    const persisted=Number(state.hostDurationSec);
+    if(Number.isFinite(persisted) && persisted>=0){
+      const cur=String($('duration').value||'').trim();
+      if(cur==='') $('duration').value=String(persisted);
+    }
+  }
+
   $('roundLabel').textContent=state.round ? state.round.number : '—';
 
   const me=myTeam();
@@ -676,6 +684,25 @@ th,td{
   font-size:12px;
   color:#aab7dd;
 }
+.rfStatusBox{
+  margin-top:8px;
+  padding:8px 10px;
+  border-radius:10px;
+  background:#101c3b;
+  border:1px solid #2d3f77;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  line-height:1.35;
+}
+.rfPairActive{
+  background:#7a5a16 !important;
+  box-shadow:0 0 0 2px #e6bf5c inset;
+}
+.rfConnActive{
+  background:#1d6a40 !important;
+  box-shadow:0 0 0 2px #6be1a2 inset;
+}
 .teamSubHint{
   display:block;
   margin-top:3px;
@@ -895,6 +922,24 @@ th,td{
       <div class="row checkRow" style="margin-top:10px">
         <label><input id="nonBurnMode" type="checkbox" onchange="setNonBurnMode()"> Раунд с несгораемыми суммами</label>
       </div>
+      <details class="detailsBlock" style="margin-top:10px">
+        <summary>RF пульты</summary>
+        <div style="margin-top:8px">
+          COM порт:
+          <select id="rfPortSelect" style="margin-left:8px"></select>
+          <button onclick="refreshRFPorts()">Обновить</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="rfConnectBtn" onclick="toggleRFConnection()">Подключить RF</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="rfPairBtn" onclick="toggleRFPairing()">Добавить команду с RF пультом</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="rfHostPairBtn" onclick="toggleRFHostPairing()">Привязать RF пульт ведущего</button>
+        </div>
+        <div id="rfStatus" class="small rfStatusBox">RF: —</div>
+      </details>
       <div class="controlGroup roundGroup">
         <h3>Управление вопросом</h3>
         <div class="controlGroup answerGroup" style="margin-top:0">
@@ -1186,6 +1231,7 @@ function render(){
   $('allowChange').checked=!!state.round.allowChange;
   $('nonBurnMode').checked=!!state.round.nonBurnMode;
   $('showScreenQR').checked=!!state.round.showScreenQR;
+  renderRF();
 
   const base=shareBaseURL();
   syncLanIPSelect();
@@ -1205,6 +1251,82 @@ function render(){
   });
 
   renderStats();
+}
+
+function renderRF(){
+  const rf=state && state.rf ? state.rf : null;
+  const sel=$('rfPortSelect');
+  if(!sel) return;
+  const ports=(rf && Array.isArray(rf.ports)) ? rf.ports : [];
+  const prev=sel.value;
+  sel.innerHTML='';
+  const empty=document.createElement('option');
+  empty.value='';
+  empty.textContent='— выбрать COM —';
+  sel.appendChild(empty);
+  for(const p of ports){
+    const o=document.createElement('option');
+    o.value=p;
+    o.textContent=p;
+    sel.appendChild(o);
+  }
+  if(rf && rf.selectedPort && ports.includes(rf.selectedPort)) sel.value=rf.selectedPort;
+  else sel.value=prev && ports.includes(prev) ? prev : '';
+
+  const connected=!!(rf && rf.connected);
+  const pairing=!!(rf && rf.pairing);
+  const hostPairing=!!(rf && rf.hostPairing);
+  const hostBound=(rf && rf.hostBinding) ? String(rf.hostBinding) : '';
+  const last=(rf && rf.lastRaw) ? ('\nСигнал: '+rf.lastRaw) : '';
+  const hint=(rf && rf.hint) ? ('\nПодсказка: '+rf.hint) : '';
+  const err=(rf && rf.error) ? ('\nОшибка: '+rf.error) : '';
+  const hostInfo=hostBound ? ('\nПульт ведущего: '+hostBound) : '\nПульт ведущего: не привязан';
+  $('rfStatus').textContent='RF: '+(connected?'подключен':'отключен')+(pairing?' | режим привязки команд':'')+(hostPairing?' | режим привязки ведущего':'')+hostInfo+hint+last+err;
+  $('rfConnectBtn').textContent = connected ? 'Отключить RF' : 'Подключить RF';
+  $('rfPairBtn').textContent=pairing ? 'Остановить привязку RF' : 'Добавить команду с RF пультом';
+  $('rfHostPairBtn').textContent=hostPairing ? 'Остановить привязку пульта ведущего' : 'Привязать RF пульт ведущего';
+  $('rfPairBtn').classList.toggle('rfPairActive', pairing);
+  $('rfHostPairBtn').classList.toggle('rfPairActive', hostPairing);
+  $('rfConnectBtn').classList.toggle('rfConnActive', connected);
+}
+
+async function refreshRFPorts(){
+  try{ await api('/api/host/rf/ports','GET'); }catch(e){ alert('Ошибка RF: '+(e.message||e)); }
+}
+
+async function connectRF(){
+  try{
+    const port=$('rfPortSelect').value;
+    await api('/api/host/rf/select-port','POST',{port});
+    await api('/api/host/rf/connect','POST',{});
+  }catch(e){ alert('Ошибка RF: '+(e.message||e)); }
+}
+
+async function disconnectRF(){
+  try{ await api('/api/host/rf/disconnect','POST',{}); }catch(e){ alert('Ошибка RF: '+(e.message||e)); }
+}
+
+async function toggleRFConnection(){
+  const connected=!!(state && state.rf && state.rf.connected);
+  if(connected){
+    await disconnectRF();
+    return;
+  }
+  await connectRF();
+}
+
+async function toggleRFPairing(){
+  try{
+    const enabled=!(state && state.rf && state.rf.pairing);
+    await api('/api/host/rf/pairing','POST',{enabled});
+  }catch(e){ alert('Ошибка RF: '+(e.message||e)); }
+}
+
+async function toggleRFHostPairing(){
+  try{
+    const enabled=!(state && state.rf && state.rf.hostPairing);
+    await api('/api/host/rf/host-pairing','POST',{enabled});
+  }catch(e){ alert('Ошибка RF: '+(e.message||e)); }
 }
 
 function renderStats(){

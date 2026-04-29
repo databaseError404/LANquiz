@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -141,56 +142,145 @@ func answerHandler(w http.ResponseWriter, r *http.Request) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	t, ok := game.Teams[req.TeamID]
-	if !ok {
-		http.Error(w, "unknown team", 404)
+	if err := submitAnswerLocked(req.TeamID, req.Choice, true); err != nil {
+		http.Error(w, err.Error(), 409)
 		return
+	}
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func submitAnswerLocked(teamID, choice string, allowSameChoiceToggle bool) error {
+	t, ok := game.Teams[teamID]
+	if !ok {
+		return fmt.Errorf("unknown team")
 	}
 	if !game.Round.Open && !game.Round.AcceptLate {
-		http.Error(w, "round closed", 409)
-		return
+		return fmt.Errorf("round closed")
 	}
-	if existing, exists := game.Answers[req.TeamID]; exists {
+	if existing, exists := game.Answers[teamID]; exists {
 		if game.Round.AcceptLate {
-			http.Error(w, "late mode accepts only unanswered teams", 409)
-			return
+			return fmt.Errorf("late mode accepts only unanswered teams")
 		}
 		if !game.Round.AllowChange {
-			http.Error(w, "answer already submitted", 409)
-			return
+			return fmt.Errorf("answer already submitted")
 		}
-
-		// Повторный выбор уже выбранного варианта снимает ответ
-		// и возвращает команду в состояние "нет ответа".
-		if existing.Choice == req.Choice {
-			delete(game.Answers, req.TeamID)
+		if allowSameChoiceToggle && existing.Choice == choice {
+			delete(game.Answers, teamID)
 			if !game.Round.Open {
 				rebuildRoundHistoryLocked()
 			}
-			broadcastLocked()
-			writeJSON(w, map[string]any{"ok": true})
-			return
+			return nil
 		}
 	}
-
 	t.LastSeen = time.Now()
 	t.Online = true
 	now := time.Now()
-
-	game.Answers[req.TeamID] = &Answer{
-		TeamID:   t.ID,
-		TeamName: t.Name,
-		Choice:   req.Choice,
-		SentAt:   now,
-	}
-
+	game.Answers[teamID] = &Answer{TeamID: t.ID, TeamName: t.Name, Choice: choice, SentAt: now}
 	if !game.Round.Open {
 		rebuildRoundHistoryLocked()
 	}
 	if game.Round.AcceptLate && len(game.Answers) >= len(game.Teams) {
 		game.Round.AcceptLate = false
 	}
+	return nil
+}
 
+func rfPortsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	game.RFStatus.Ports = listCOMPorts()
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true, "ports": game.RFStatus.Ports})
+}
+
+func rfSelectPortHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Port string `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	game.RFSelectedPort = strings.TrimSpace(req.Port)
+	game.Dirty = true
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func rfConnectHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if err := connectRFSelectedPortLocked(); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func rfDisconnectHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	disconnectRFLocked()
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func rfPairingHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	game.RFPairing = req.Enabled
+	setRFPairingTimeoutLocked(req.Enabled)
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+func rfHostPairingHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	game.RFHostPairing = req.Enabled
+	setRFHostPairingTimeoutLocked(req.Enabled)
 	broadcastLocked()
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -217,6 +307,10 @@ func openRoundHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
+	if req.DurationSec < 0 {
+		req.DurationSec = 0
+	}
+	game.HostDurationSec = req.DurationSec
 	game.Answers = map[string]*Answer{}
 	game.Round.Open = true
 	game.Round.AcceptLate = false
@@ -536,6 +630,11 @@ func removeTeamHandler(w http.ResponseWriter, r *http.Request) {
 
 	delete(game.Teams, req.TeamID)
 	delete(game.Answers, req.TeamID)
+	for base, teamID := range game.RFBindings {
+		if strings.TrimSpace(teamID) == req.TeamID {
+			delete(game.RFBindings, base)
+		}
+	}
 
 	filtered := make([]HistoryRow, 0, len(game.History))
 	for _, h := range game.History {

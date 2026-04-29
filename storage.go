@@ -13,11 +13,15 @@ import (
 func saveState() error {
 	mu.RLock()
 	ps := PersistedState{
-		Title:   game.Title,
-		Teams:   game.Teams,
-		Answers: game.Answers,
-		Round:   game.Round,
-		History: game.History,
+		Title:           game.Title,
+		Teams:           game.Teams,
+		Answers:         game.Answers,
+		Round:           game.Round,
+		History:         game.History,
+		HostDurationSec: game.HostDurationSec,
+		RFSelectedPort:  game.RFSelectedPort,
+		RFBindings:      game.RFBindings,
+		RFHostBinding:   game.RFHostBinding,
 	}
 	mu.RUnlock()
 
@@ -60,6 +64,17 @@ func loadState() {
 	if ps.Answers != nil {
 		game.Answers = ps.Answers
 	}
+	if ps.RFBindings != nil {
+		game.RFBindings = ps.RFBindings
+	}
+	if ps.HostDurationSec >= 0 {
+		game.HostDurationSec = ps.HostDurationSec
+	}
+	if game.HostDurationSec == 0 {
+		game.HostDurationSec = 60
+	}
+	game.RFHostBinding = ps.RFHostBinding
+	game.RFSelectedPort = ps.RFSelectedPort
 	game.Round = ps.Round
 	game.History = ps.History
 

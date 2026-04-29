@@ -62,15 +62,30 @@ type PublicTeam struct {
 }
 
 type PublicState struct {
-	Title          string       `json:"title"`
-	ServerTimeUnix int64        `json:"serverTimeUnix"`
-	Round          RoundState   `json:"round"`
-	Teams          []PublicTeam `json:"teams"`
-	OnlineCount    int          `json:"onlineCount"`
-	AnsweredCount  int          `json:"answeredCount"`
-	StatsRounds    []int        `json:"statsRounds,omitempty"`
-	TeamStats      []TeamStats  `json:"teamStats,omitempty"`
-	IPHints        []string     `json:"ipHints,omitempty"`
+	Title           string        `json:"title"`
+	ServerTimeUnix  int64         `json:"serverTimeUnix"`
+	HostDurationSec int           `json:"hostDurationSec,omitempty"`
+	Round           RoundState    `json:"round"`
+	Teams           []PublicTeam  `json:"teams"`
+	OnlineCount     int           `json:"onlineCount"`
+	AnsweredCount   int           `json:"answeredCount"`
+	StatsRounds     []int         `json:"statsRounds,omitempty"`
+	TeamStats       []TeamStats   `json:"teamStats,omitempty"`
+	IPHints         []string      `json:"ipHints,omitempty"`
+	RF              RFPublicState `json:"rf,omitempty"`
+}
+
+type RFPublicState struct {
+	Ports        []string `json:"ports,omitempty"`
+	SelectedPort string   `json:"selectedPort,omitempty"`
+	Connected    bool     `json:"connected"`
+	Pairing      bool     `json:"pairing"`
+	HostPairing  bool     `json:"hostPairing"`
+	HostBinding  string   `json:"hostBinding,omitempty"`
+	LastRaw      string   `json:"lastRaw,omitempty"`
+	LastButton   string   `json:"lastButton,omitempty"`
+	Hint         string   `json:"hint,omitempty"`
+	Error        string   `json:"error,omitempty"`
 }
 
 type TeamStats struct {
@@ -85,11 +100,15 @@ type TeamStats struct {
 var scoreProgression = []int{0, 100, 200, 300, 500, 700, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000}
 
 type PersistedState struct {
-	Title   string             `json:"title"`
-	Teams   map[string]*Team   `json:"teams"`
-	Answers map[string]*Answer `json:"answers"`
-	Round   RoundState         `json:"round"`
-	History []HistoryRow       `json:"history"`
+	Title           string             `json:"title"`
+	Teams           map[string]*Team   `json:"teams"`
+	Answers         map[string]*Answer `json:"answers"`
+	Round           RoundState         `json:"round"`
+	History         []HistoryRow       `json:"history"`
+	HostDurationSec int                `json:"hostDurationSec,omitempty"`
+	RFSelectedPort  string             `json:"rfSelectedPort,omitempty"`
+	RFBindings      map[string]string  `json:"rfBindings,omitempty"`
+	RFHostBinding   string             `json:"rfHostBinding,omitempty"`
 }
 
 type Game struct {
@@ -97,10 +116,18 @@ type Game struct {
 	Secret   string
 	DataPath string
 
-	Teams   map[string]*Team
-	Answers map[string]*Answer
-	Round   RoundState
-	History []HistoryRow
+	Teams           map[string]*Team
+	Answers         map[string]*Answer
+	Round           RoundState
+	History         []HistoryRow
+	HostDurationSec int
+
+	RFSelectedPort string
+	RFPairing      bool
+	RFHostPairing  bool
+	RFBindings     map[string]string
+	RFHostBinding  string
+	RFStatus       RFPublicState
 
 	Events map[chan []byte]eventSubscriber
 	Dirty  bool
@@ -117,12 +144,14 @@ var (
 
 func initGame(title, secret, dataPath string) {
 	game = &Game{
-		Title:    title,
-		Secret:   secret,
-		DataPath: dataPath,
-		Teams:    map[string]*Team{},
-		Answers:  map[string]*Answer{},
-		Events:   map[chan []byte]eventSubscriber{},
+		Title:         title,
+		Secret:        secret,
+		DataPath:      dataPath,
+		Teams:         map[string]*Team{},
+		Answers:       map[string]*Answer{},
+		RFBindings:    map[string]string{},
+		RFHostBinding: "",
+		Events:        map[chan []byte]eventSubscriber{},
 		Round: RoundState{
 			Number:       1,
 			Open:         false,
@@ -130,6 +159,7 @@ func initGame(title, secret, dataPath string) {
 			HideAnswers:  true,
 			ShowScreenQR: false,
 		},
+		HostDurationSec: 60,
 	}
 }
 
@@ -189,15 +219,27 @@ func publicStateLocked(isHost bool) PublicState {
 	statsRounds, teamStats = buildTeamStatsLocked()
 
 	return PublicState{
-		Title:          game.Title,
-		ServerTimeUnix: time.Now().Unix(),
-		Round:          round,
-		Teams:          teams,
-		OnlineCount:    onlineCount,
-		AnsweredCount:  answeredCount,
-		StatsRounds:    statsRounds,
-		TeamStats:      teamStats,
-		IPHints:        localIPs(),
+		Title:           game.Title,
+		ServerTimeUnix:  time.Now().Unix(),
+		HostDurationSec: game.HostDurationSec,
+		Round:           round,
+		Teams:           teams,
+		OnlineCount:     onlineCount,
+		AnsweredCount:   answeredCount,
+		StatsRounds:     statsRounds,
+		TeamStats:       teamStats,
+		IPHints:         localIPs(),
+		RF: func() RFPublicState {
+			if !isHost {
+				return RFPublicState{}
+			}
+			rf := game.RFStatus
+			rf.SelectedPort = game.RFSelectedPort
+			rf.Pairing = game.RFPairing
+			rf.HostPairing = game.RFHostPairing
+			rf.HostBinding = game.RFHostBinding
+			return rf
+		}(),
 	}
 }
 

@@ -22,6 +22,7 @@ func main() {
 	ensureAndLoadScoreProgression(scoreProgressionFilePath)
 	initGame(*titleFlag, *secretFlag, *dataFile)
 	loadState()
+	initRFAfterLoad()
 
 	go pruneOfflineLoop()
 	go autocloseLoop()
@@ -53,6 +54,12 @@ func main() {
 	http.HandleFunc("/api/host/team/safe-sums", hostOnly(setTeamSafeSumsHandler))
 	http.HandleFunc("/api/host/team/rename", hostOnly(renameTeamHandler))
 	http.HandleFunc("/api/host/team/remove", hostOnly(removeTeamHandler))
+	http.HandleFunc("/api/host/rf/ports", hostOnly(rfPortsHandler))
+	http.HandleFunc("/api/host/rf/select-port", hostOnly(rfSelectPortHandler))
+	http.HandleFunc("/api/host/rf/connect", hostOnly(rfConnectHandler))
+	http.HandleFunc("/api/host/rf/disconnect", hostOnly(rfDisconnectHandler))
+	http.HandleFunc("/api/host/rf/pairing", hostOnly(rfPairingHandler))
+	http.HandleFunc("/api/host/rf/host-pairing", hostOnly(rfHostPairingHandler))
 
 	http.HandleFunc("/manifest.webmanifest", manifestHandler)
 	http.HandleFunc("/sw.js", serviceWorkerHandler)
