@@ -316,6 +316,112 @@ func setNonBurnModeHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+func addTeamHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		TeamName string `json:"teamName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	req.TeamName = strings.TrimSpace(req.TeamName)
+	if req.TeamName == "" {
+		http.Error(w, "empty team name", 400)
+		return
+	}
+
+	now := time.Now()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	t := &Team{
+		ID:       randomID(),
+		Name:     req.TeamName,
+		Online:   false,
+		LastSeen: now,
+		JoinedAt: now,
+	}
+	game.Teams[t.ID] = t
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true, "teamId": t.ID, "name": t.Name})
+}
+
+func setTeamAnswerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		TeamID string `json:"teamId"`
+		Choice string `json:"choice"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+
+	req.TeamID = strings.TrimSpace(req.TeamID)
+	req.Choice = strings.ToUpper(strings.TrimSpace(req.Choice))
+	if req.Choice == "—" {
+		req.Choice = ""
+	}
+
+	if req.TeamID == "" {
+		http.Error(w, "empty team id", 400)
+		return
+	}
+	if req.Choice != "" && req.Choice != "А" && req.Choice != "Б" && req.Choice != "В" && req.Choice != "Г" {
+		http.Error(w, "choice must be —/А/Б/В/Г", 400)
+		return
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	t, ok := game.Teams[req.TeamID]
+	if !ok {
+		http.Error(w, "unknown team", 404)
+		return
+	}
+
+	if !game.Round.Open && game.Round.Revealed {
+		http.Error(w, "round already revealed", 409)
+		return
+	}
+
+	if req.Choice == "" {
+		delete(game.Answers, req.TeamID)
+	} else {
+		now := time.Now()
+		game.Answers[req.TeamID] = &Answer{
+			TeamID:   t.ID,
+			TeamName: t.Name,
+			Choice:   req.Choice,
+			SentAt:   now,
+		}
+
+		if game.Round.AcceptLate && len(game.Answers) >= len(game.Teams) {
+			game.Round.AcceptLate = false
+		}
+	}
+
+	if !game.Round.Open {
+		rebuildRoundHistoryLocked()
+	}
+
+	broadcastLocked()
+	writeJSON(w, map[string]any{"ok": true, "teamId": t.ID, "choice": req.Choice})
+}
+
 func setTeamSafeSumsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", 405)

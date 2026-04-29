@@ -48,6 +48,8 @@ func main() {
 	http.HandleFunc("/api/host/replay-round", hostOnly(replayRoundHandler))
 	http.HandleFunc("/api/host/screen-qr", hostOnly(setScreenQRHandler))
 	http.HandleFunc("/api/host/non-burn-mode", hostOnly(setNonBurnModeHandler))
+	http.HandleFunc("/api/host/team/add", hostOnly(addTeamHandler))
+	http.HandleFunc("/api/host/team/answer", hostOnly(setTeamAnswerHandler))
 	http.HandleFunc("/api/host/team/safe-sums", hostOnly(setTeamSafeSumsHandler))
 	http.HandleFunc("/api/host/team/rename", hostOnly(renameTeamHandler))
 	http.HandleFunc("/api/host/team/remove", hostOnly(removeTeamHandler))

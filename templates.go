@@ -952,7 +952,10 @@ th,td{
       <div id="roundStatus" style="margin-top:10px">—</div>
       <div id="correctBox" style="margin-top:6px"></div>
 
-      <div class="statsTitle">Команды и статистика по вопросам</div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:8px">
+        <div class="statsTitle" style="margin:0">Команды и статистика по вопросам</div>
+        <button onclick="addTeam()">Добавить команду</button>
+      </div>
       <table class="statsTable hostStatsTable">
         <thead id="statsHead"></thead>
         <tbody id="statsBody"></tbody>
@@ -1240,8 +1243,21 @@ function renderStats(){
           : '<span class="teamSubHint">несгораемые: —</span>')
       : '';
     tr.innerHTML=
-      '<td><span style="color:'+teamColor+'">'+escapeHtml(t.name||'—')+'</span>'+safeHint+'</td>'+
-      '<td>'+(t.choice?escapeHtml(t.choice):'—')+'</td>';
+      '<td><span style="color:'+teamColor+'">'+escapeHtml(t.name||'—')+'</span>'+safeHint+'</td>';
+
+    const answerTd=document.createElement('td');
+    const answerSelect=document.createElement('select');
+    answerSelect.innerHTML=''+
+      '<option value="">—</option>'+
+      '<option value="А">А</option>'+
+      '<option value="Б">Б</option>'+
+      '<option value="В">В</option>'+
+      '<option value="Г">Г</option>';
+    answerSelect.value=String(t.choice||'');
+    answerSelect.disabled=!!(state && state.round && state.round.revealed);
+    answerSelect.onchange=()=>setTeamAnswer(t.id, answerSelect.value);
+    answerTd.appendChild(answerSelect);
+    tr.appendChild(answerTd);
 
     const results=ts && Array.isArray(ts.roundResults) ? ts.roundResults : [];
     for(let i=0;i<rounds.length;i++){
@@ -1450,6 +1466,30 @@ async function removeTeam(teamId, teamName){
     await api('/api/host/team/remove','POST',{teamId});
   }catch(e){
     alert('Ошибка удаления команды: ' + (e.message || e));
+  }
+}
+
+async function addTeam(){
+  const raw=prompt('Название новой команды:');
+  if(raw===null) return;
+  const teamName=String(raw).trim();
+  if(!teamName){
+    alert('Название команды не может быть пустым');
+    return;
+  }
+  try{
+    await api('/api/host/team/add','POST',{teamName});
+  }catch(e){
+    alert('Ошибка добавления команды: ' + (e.message || e));
+  }
+}
+
+async function setTeamAnswer(teamId, choice){
+  if(!teamId) return;
+  try{
+    await api('/api/host/team/answer','POST',{teamId,choice});
+  }catch(e){
+    alert('Ошибка изменения ответа: ' + (e.message || e));
   }
 }
 
