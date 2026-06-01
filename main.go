@@ -83,6 +83,8 @@ func main() {
 		go func() {
 			time.Sleep(700 * time.Millisecond)
 			openBrowser("http://localhost" + *addrFlag + "/host")
+			time.Sleep(200 * time.Millisecond)
+			openBrowser("http://localhost" + *addrFlag + "/screen")
 		}()
 	}
 

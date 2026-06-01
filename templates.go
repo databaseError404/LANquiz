@@ -1692,6 +1692,12 @@ body{
 .statsTable td:first-child{
   text-align:left;
 }
+.screenHeaderLabel{
+  color:#ffd966;
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:.02em;
+}
 .qrBlock{
   margin-top:18px;
   text-align:center;
@@ -1792,7 +1798,7 @@ function renderScreenStats(){
     : [];
 
   const trHead=document.createElement('tr');
-  trHead.innerHTML='<th>Команда</th>' + rounds.map(()=>'<th></th>').join('') + '<th>Счёт</th>';
+  trHead.innerHTML='<th class="screenHeaderLabel">Команда</th>' + rounds.map(()=>'<th></th>').join('') + '<th class="screenHeaderLabel">Счёт</th>';
   head.appendChild(trHead);
 
   if(teamStats.length===0){

@@ -1,1 +1,1 @@
-go build -o quiz-host .
+go build -o quiz-host.exe .
